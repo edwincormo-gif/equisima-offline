@@ -1,138 +1,93 @@
-import streamlit as st, pandas as pd, numpy as np
-from datetime import datetime
+import streamlit as st, pandas as pd
 from io import BytesIO
 import openpyxl
-from openpyxl.styles import Font, Alignment, Border, Side
+from openpyxl.styles import Font, Border, Side, PatternFill
 from openpyxl.drawing.image import Image as XLImage
 import tempfile, os
 
-st.set_page_config(page_title="EQUISIMA ORIGINAL", layout="wide")
-st.title("🟡 EQUISIMA - Original con recuadros")
+st.set_page_config(layout="wide")
+st.title("🟡 EQUISIMA - Sin recuadros en foto")
 
 if 'puntos' not in st.session_state: st.session_state.puntos=[]
-
-# --- ESTILOS ORIGINALES ---
-thin = Side(style='thin', color='000000')
-border_all = Border(left=thin, right=thin, top=thin, bottom=thin)
-bold8 = Font(bold=True, size=8)
-bold10 = Font(bold=True, size=10)
+thin=Side(style='thin'); border_all=Border(left=thin,right=thin,top=thin,bottom=thin)
+no_border=Border()
 
 with st.sidebar:
-    cliente = st.text_input("CLIENTE", "Rueda Inversiones S.A.S.")
-    proyecto = st.text_input("PROYECTO", "")
-    depto = st.text_input("DEPARTAMENTO", "TOLIMA")
-    muni = st.text_input("MUNICIPIO", "ATACO")
-    resp = st.text_input("Responsable", "edwin cortes")
-    st.divider()
-    st.write("EQUIPOS (como original)")
-    eq_sono = st.text_input("Sonómetro Marca", "HD2010UC/A")
-    serie_sono = st.text_input("Serie Sonómetro", "15031643825")
-    eq_pist = st.text_input("Pistófono", "HD2020")
+    cliente=st.text_input("CLIENTE","Rueda Inversiones S.A.S.")
+    muni=st.text_input("MUNICIPIO","ATACO")
 
-st.subheader("Nuevo Punto")
-punto = st.text_input("PUNTO", "Punto 1 nocturno")
-coord = st.text_input("COORDENADAS ORIGEN NACIONAL", "3°35'11.30\"N 75°23'27.72\"W")
-desc = st.text_area("DESCRIPCIÓN", "En la entrada o vía principal...")
-barrido = st.number_input("BARRIDO dB", 0, 140, 65)
-c1,c2,c3 = st.columns(3)
-fecha = c1.date_input("Fecha")
-hora = c2.text_input("Hora", "21:01")
-cal_i = c3.text_input("Cal Ini", "114")
-cal_f = st.text_input("Cal Final", "114")
-mem = st.number_input("Memoria", 1, 99, 1)
-laeq = st.number_input("LAeq", 0.0, 140.0, 65.0)
-foto = st.file_uploader("📸 Foto Earth / Esquema", type=['jpg','png','jpeg'])
+punto=st.text_input("PUNTO","Punto 1 nocturno")
+coord=st.text_input("COORD","3°35'11.30\"N 75°23'27.72\"W")
+desc=st.text_area("DESCRIPCIÓN","En la entrada...")
+barrido=st.number_input("BARRIDO",0,140,65)
+fecha=st.date_input("Fecha")
+hora=st.text_input("Hora","21:01")
+cal_i=st.text_input("Cal Ini","114")
+cal_f=st.text_input("Cal Fin","114")
+mem=st.number_input("Mem",1,99,1)
+laeq=st.number_input("LAeq",0.0,140.0,65.0)
+foto=st.file_uploader("📸 Foto Earth",type=['jpg','png','jpeg'])
+vmax=st.text_input("Vmax","0.3"); vdir=st.text_input("Dir","SW"); temp=st.text_input("Temp","29"); hum=st.text_input("Hum","45")
+precip=st.selectbox("Precip",["NO","SI"]); fuente=st.text_input("Fuente","mineria"); tipo=st.text_input("Tipo","EMISION"); top=st.text_input("Top","1")
+obs=st.text_area("Obs","camino destapado...")
 
-vmax = st.text_input("Vmax", "0.3")
-vdir = st.text_input("Dir", "SW")
-temp = st.text_input("Temp", "29")
-hum = st.text_input("Hum", "45")
-precip = st.selectbox("Precip", ["NO","SI"])
-fuente = st.text_input("Fuente", "mineria")
-tipo = st.text_input("Tipo", "EMISION")
-top = st.text_input("Tiempo Op", "1")
-obs = st.text_area("Observaciones", "camino destapado...")
-
-if st.button("➕ AGREGAR PUNTO", type="primary", use_container_width=True):
-    fpath=None
+if st.button("➕ AGREGAR PUNTO",type="primary",use_container_width=True):
+    fp=None
     if foto:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
-            tmp.write(foto.getbuffer()); fpath=tmp.name
-    st.session_state.puntos.append([punto,coord,desc,barrido,str(fecha),hora,cal_i,cal_f,mem,laeq,vmax,vdir,temp,hum,precip,fuente,tipo,top,obs,fpath])
+        with tempfile.NamedTemporaryFile(delete=False,suffix=".jpg") as t:
+            t.write(foto.getbuffer()); fp=t.name
+    st.session_state.puntos.append([punto,coord,desc,barrido,str(fecha),hora,cal_i,cal_f,mem,laeq,vmax,vdir,temp,hum,precip,fuente,tipo,top,obs,fp])
 
 if st.session_state.puntos:
-    st.dataframe(pd.DataFrame(st.session_state.puntos), use_container_width=True)
-
     def build():
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title="Datos de Campo Emision"
-        # Anchos exactos
+        wb=openpyxl.Workbook(); ws=wb.active; ws.title="Datos de Campo Emision"
         for k,w in {'A':2,'B':22,'C':15,'D':18,'E':20,'F':18,'G':14,'H':14,'I':12,'J':12,'K':22,'L':20,'M':14,'N':14,'O':38}.items():
             ws.column_dimensions[k].width=w
 
-        def celda(r,c,valor,bold=False,wrap=False,center=False):
-            cell=ws.cell(row=r,column=c,value=valor)
-            if bold: cell.font=Font(bold=True,size=9)
+        def celdab(r,c,v,b=False):
+            cell=ws.cell(row=r,column=c,value=v)
+            if b: cell.font=Font(bold=True,size=9)
             cell.border=border_all
-            if wrap: cell.alignment=Alignment(wrap_text=True, vertical='center')
-            if center: cell.alignment=Alignment(horizontal='center', vertical='center', wrap_text=True)
             return cell
 
-        # TITULO CON RECUADRO
-        ws.merge_cells('B2:O2'); ws['B2']="DATOS DE CAMPO EMISION DE RUIDO"; ws['B2'].font=Font(bold=True,size=12); ws['B2'].alignment=Alignment(horizontal='center'); ws['B2'].border=border_all
-
-        ws['B4']="Codigo: R2-POE37-EP"; ws['F4']="Version: 04"; ws['K4']="Fecha: 2024-05-20"
-        for c in [2,6,11]: ws.cell(row=4,column=c).border=border_all
-
-        # CLIENTE CON RECUADROS
+        ws.merge_cells('B2:O2'); ws['B2']="DATOS DE CAMPO EMISION DE RUIDO"; ws['B2'].font=Font(bold=True,size=12); ws['B2'].border=border_all
+        ws['B4']="Codigo: R2-POE37-EP"; ws['B4'].border=border_all; ws['F4']="Version: 04"; ws['F4'].border=border_all; ws['K4']="Fecha: 2024-05-20"; ws['K4'].border=border_all
         r=6
-        celda(r,2,"CLIENTE:",True); celda(r,3,cliente); ws.merge_cells(f'C{r}:H{r}'); celda(r,9,"DATOS DEL EQUIPO UTILIZADO",True,center=True); ws.merge_cells(f'I{r}:O{r}')
+        celdab(r,2,"CLIENTE:",True); ws.merge_cells(f'C{r}:H{r}'); ws[f'C{r}']=cliente; ws[f'C{r}'].border=border_all
+        ws.merge_cells(f'I{r}:O{r}'); ws[f'I{r}']="DATOS DEL EQUIPO UTILIZADO"; ws[f'I{r}'].font=Font(bold=True); ws[f'I{r}'].border=border_all
         r=7
-        celda(r,2,"NOMBRE DEL PROYECTO:",True); celda(r,3,proyecto); ws.merge_cells(f'C{r}:H{r}'); celda(r,9,"EQUIPO",True,center=True); celda(r,11,"MARCA",True,center=True); celda(r,13,"SERIE",True,center=True); ws.merge_cells(f'I{r}:J{r}'); ws.merge_cells(f'K{r}:L{r}'); ws.merge_cells(f'M{r}:O{r}')
-        r=8
-        celda(r,2,"DEPARTAMENTO :",True); celda(r,3,depto); ws.merge_cells(f'C{r}:H{r}'); celda(r,9,"SONÓMETRO"); celda(r,11,eq_sono); celda(r,13,serie_sono); ws.merge_cells(f'I{r}:J{r}'); ws.merge_cells(f'K{r}:L{r}'); ws.merge_cells(f'M{r}:O{r}')
-        r=9
-        celda(r,2,"MUNICIPIO:",True); celda(r,3,muni); ws.merge_cells(f'C{r}:H{r}'); celda(r,9,"PISTÓFONO"); celda(r,11,eq_pist); ws.merge_cells(f'I{r}:J{r}'); ws.merge_cells(f'K{r}:L{r}'); ws.merge_cells(f'M{r}:O{r}')
-        r=10
-        celda(r,2,"PLAN DE MUESTREO:",True); celda(r,3,"EMISIÓN RUIDO"); ws.merge_cells(f'C{r}:H{r}'); celda(r,9,"ESTACIÓN METEOROLÓGICA"); ws.merge_cells(f'I{r}:O{r}')
+        celdab(r,2,"NOMBRE DEL PROYECTO:",True); ws.merge_cells(f'C{r}:H{r}'); ws[f'C{r}'].border=border_all
+        ws.merge_cells(f'I{r}:J{r}'); celdab(r,9,"EQUIPO",True); ws.merge_cells(f'K{r}:L{r}'); celdab(r,11,"MARCA",True); ws.merge_cells(f'M{r}:O{r}'); celdab(r,13,"SERIE",True); r=8
+        celdab(r,2,"DEPARTAMENTO :",True); ws.merge_cells(f'C{r}:H{r}'); ws[f'C{r}']="TOLIMA"; ws[f'C{r}'].border=border_all
+        ws.merge_cells(f'I{r}:J{r}'); ws[f'I{r}']="SONÓMETRO"; ws[f'I{r}'].border=border_all; ws.merge_cells(f'K{r}:L{r}'); ws[f'K{r}']="HD2010UC/A"; ws[f'K{r}'].border=border_all; ws.merge_cells(f'M{r}:O{r}'); ws[f'M{r}']="15031643825"; ws[f'M{r}'].border=border_all; r=9
+        celdab(r,2,"MUNICIPIO:",True); ws.merge_cells(f'C{r}:H{r}'); ws[f'C{r}']=muni; ws[f'C{r}'].border=border_all; ws.merge_cells(f'I{r}:J{r}'); ws[f'I{r}']="PISTÓFONO"; ws[f'I{r}'].border=border_all; r=12
 
-        r=12
         for p in st.session_state.puntos:
-            # PUNTO CON RECUADROS
-            celda(r,2,"PUNTO DE MONITOREO:",True); ws.merge_cells(f'C{r}:E{r}'); celda(r,3,p[0]); celda(r,6,"COORDENADAS ORIGEN NACIONAL:",True); ws.merge_cells(f'F{r}:I{r}'); celda(r,10,p[1]); ws.merge_cells(f'J{r}:O{r}'); r+=1
-            celda(r,2,"DESCRIPCIÓN DEL PUNTO:",True); ws.merge_cells(f'C{r}:O{r}'); celda(r,3,p[2],wrap=True); ws.row_dimensions[r].height=40; r+=1
-            celda(r,2,"BARRIDO PERIMETRAL (dB):",True); celda(r,3,p[3],center=True); r+=1
-
-            # TABLA MEDICION CON RECUADROS
-            headers=["Fecha","Hora","Calibración (dB)","Memoria","LAeq,T (dB)\nIn situ","Viento Max\n(m/s)","Dir Viento","Temp\n(°C)","Hum\n(%)","Precipitación","Fuente Ruido","Tipo Ruido","Tiempo Op","Observaciones"]
+            celdab(r,2,"PUNTO DE MONITOREO:",True); ws.merge_cells(f'C{r}:E{r}'); ws[f'C{r}']=p[0]; ws[f'C{r}'].border=border_all
+            celdab(r,6,"COORDENADAS ORIGEN NACIONAL:",True); ws.merge_cells(f'G{r}:O{r}'); ws[f'G{r}']=p[1]; ws[f'G{r}'].border=border_all; r+=1
+            celdab(r,2,"DESCRIPCIÓN DEL PUNTO:",True); ws.merge_cells(f'C{r}:O{r}'); ws[f'C{r}']=p[2]; ws[f'C{r}'].border=border_all; r+=1
+            celdab(r,2,"BARRIDO PERIMETRAL (dB):",True); ws[f'C{r}']=p[3]; ws[f'C{r}'].border=border_all; r+=1
+            headers=["Fecha","Hora","Calibración","Memoria","LAeq","Vmax","Dir","Temp","Hum","Precip","Fuente","Tipo","Top","Obs"]
             for i,h in enumerate(headers, start=2):
-                c=celda(r,i,h,True,True,True); c.font=Font(bold=True,size=7)
-            ws.row_dimensions[r].height=35; r+=1
-            vals=[p[4],p[5],f"Ini {p[6]}\nFin {p[7]}",p[8],p[9],p[10],p[11],p[12],p[13],p[14],p[15],p[16],p[17],p[18]]
+                ws.cell(row=r,column=i,value=h).font=Font(bold=True,size=7); ws.cell(row=r,column=i).border=border_all
+            r+=1
+            vals=[p[4],p[5],f"Ini {p[6]} Fin {p[7]}",p[8],p[9],p[10],p[11],p[12],p[13],p[14],p[15],p[16],p[17],p[18]]
             for i,v in enumerate(vals, start=2):
-                celda(r,i,v,center=True,wrap=True)
+                ws.cell(row=r,column=i,value=v).border=border_all
             r+=2
 
-            # ESQUEMA CON RECUADRO GRANDE PARA FOTO
-            celda(r,2,"DIBUJE EL ESQUEMA DEL PUNTO DE MONITOREO",True); ws.merge_cells(f'B{r}:O{r}'); r+=1
-            # Recuadro de 4 filas x 14 columnas para foto
+            # AREA FOTO SIN RECUADROS
+            ws[f'B{r}']="DIBUJE EL ESQUEMA DEL PUNTO DE MONITOREO"; ws[f'B{r}'].font=Font(bold=True); r+=1
             foto_r=r
-            for rr in range(foto_r, foto_r+5):
-                for cc in range(2,16):
-                    ws.cell(row=rr,column=cc).border=border_all
-                ws.row_dimensions[rr].height=60
-
+            ws.merge_cells(f'B{foto_r}:O{foto_r+5}')
+            for rr in range(foto_r, foto_r+6):
+                ws.row_dimensions[rr].height=65
+                for cc in range(1,16):
+                    ws.cell(row=rr,column=cc).border=no_border
             if p[19] and os.path.exists(p[19]):
-                try:
-                    img=XLImage(p[19]); img.width=650; img.height=280
-                    ws.add_image(img, f'C{foto_r}')
-                except: pass
-            else:
-                ws[f'C{foto_r}']="ESPACIO PARA FOTO EARTH"
-            r=foto_r+6
+                img=XLImage(p[19]); img.width=900; img.height=400
+                ws.add_image(img, f'B{foto_r}')
+            r=foto_r+7
 
-        ws[f'B{r}']="Responsable:"; ws[f'C{r}']=resp
         bio=BytesIO(); wb.save(bio); bio.seek(0); return bio
-
-    st.download_button("📥 DESCARGAR ORIGINAL CON RECUADROS Y FOTO", build(), f"R2-POE37-EP_{muni}_ORIGINAL.xlsx", type="primary", use_container_width=True)
+    st.download_button("📥 DESCARGAR SIN RECUADROS EN FOTO", build(), f"ORIGINAL_{muni}.xlsx", type="primary", use_container_width=True)
