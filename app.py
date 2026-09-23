@@ -85,7 +85,7 @@ with tab2:
 
 with tab3:
     st.subheader("Fotos y Descarga")
-    fotos = st.file_uploader("Sube fotos", type=["jpg","jpeg","png"], accept_multiple_files=True, key="fotos")
+    fotos = st.file_uploader("Sube fotos", type=["jpg","jpeg","png"], accept_multiple_files=True, key="fotos_uploader")
     if fotos:
         for f in fotos:
             st.image(f, width=200)
