@@ -158,61 +158,104 @@ with tab2:
         c1.download_button("PDF FOTOS", build_pdf(), f"Fotos_{muni}.pdf", mime="application/pdf", type="primary", use_container_width=True)
         c2.download_button("ZIP CARPETA", build_zip(), f"Fotos_{muni}.zip", mime="application/zip", use_container_width=True)
 
-# ---------- TAB 3 NUEVA ----------
+# ---------- TAB 3 NUEVA - CON PDF CON GRAFICA ----------
 with tab3:
     st.subheader("🔊 Análisis Sonómetro - Res 0627 de 2006")
-    st.write("Sube el archivo que te bota el Noise Studio (Excel Varios o CSV). Te calcula LAeq Total, Residual y Emisión, y te dice si CUMPLE la norma.")
 
     sector = st.selectbox("Sector Res 0627", ["A - Tranquilidad", "B - Residencial", "C - Industrial", "D - Centro"])
     periodo = st.selectbox("Periodo", ["diurno", "nocturno"])
 
     col1, col2 = st.columns(2)
     with col1:
-        f_total = st.file_uploader("Archivo TOTAL (con fuente prendida) - xlsx o csv", type=["xlsx","xls","csv"], key="tot")
+        f_total = st.file_uploader("TOTAL (fuente ON) - xlsx o csv", type=["xlsx","xls","csv"], key="tot")
     with col2:
-        f_res = st.file_uploader("Archivo RESIDUAL (fuente apagada) - xlsx o csv", type=["xlsx","xls","csv"], key="res")
+        f_res = st.file_uploader("RESIDUAL (fuente OFF) - xlsx o csv", type=["xlsx","xls","csv"], key="res")
 
     if f_total:
         vals_total, col_name = leer_hd2010(f_total)
         if vals_total:
             leq_total = calcular_leq(vals_total)
             st.metric(f"LAeq Total ({col_name})", f"{leq_total:.1f} dB(A)")
-            st.line_chart(vals_total[:600]) # primeros 10 min
+            st.line_chart(vals_total[:600])
         else:
-            st.error("No pude leer dB en ese archivo. Mándame captura de la hoja Time History")
+            st.error("No pude leer dB. Mándame captura Time History")
 
     if f_total and f_res:
         vals_total, _ = leer_hd2010(f_total)
         vals_res, _ = leer_hd2010(f_res)
         leq_t = calcular_leq(vals_total)
         leq_r = calcular_leq(vals_res)
-        # Calculo Emision: resta logaritmica
         try:
             emision = 10*np.log10(10**(leq_t/10) - 10**(leq_r/10))
         except:
-            emision = leq_t # si residual muy alto
+            emision = leq_t
 
         limite = norma_627(sector, periodo)
-        cumple = "✅ CUMPLE" if emision <= limite else "❌ NO CUMPLE - Excede norma"
+        cumple = "CUMPLE" if emision <= limite else "NO CUMPLE - Excede norma"
+        cumple_icon = "✅ CUMPLE" if emision <= limite else "❌ NO CUMPLE"
 
         st.divider()
-        st.subheader("Resultados según Res 0627")
         c1,c2,c3,c4=st.columns(4)
         c1.metric("LAeq Total", f"{leq_t:.1f} dB")
         c2.metric("LAeq Residual", f"{leq_r:.1f} dB")
         c3.metric("LAeq Emisión", f"{emision:.1f} dB")
         c4.metric(f"Límite {sector} {periodo}", f"{limite} dB")
+        st.markdown(f"### {cumple_icon}")
 
-        st.markdown(f"### {cumple}")
-
-        # tabla para informe
         df_res = pd.DataFrame({
             "Concepto": ["LAeq Total", "LAeq Residual", "LAeq Emisión (Fuente)", "Límite Norma", "Cumplimiento"],
-            "Valor dB(A)": [f"{leq_t:.1f}", f"{leq_r:.1f}", f"{emision:.1f}", f"{limite}", cumple]
+            "Valor": [f"{leq_t:.1f} dB(A)", f"{leq_r:.1f} dB(A)", f"{emision:.1f} dB(A)", f"{limite} dB(A)", cumple]
         })
         st.table(df_res)
 
-        # exportar excel analisis
+        # ---- GENERAR GRAFICA PARA PDF ----
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots(figsize=(8,3))
+        ax.plot(vals_total[:600], label=f"Total {leq_t:.1f} dB", linewidth=1)
+        if len(vals_res) >= 600:
+            ax.plot(vals_res[:600], label=f"Residual {leq_r:.1f} dB", linewidth=1, alpha=0.7)
+        ax.set_xlabel("Tiempo (s)"); ax.set_ylabel("dB(A)")
+        ax.set_title(f"Perfil acustico - {muni} - {sector}")
+        ax.legend(); ax.grid(True, alpha=0.3)
+        graf_path = tempfile.NamedTemporaryFile(delete=False, suffix=".png").name
+        plt.tight_layout(); plt.savefig(graf_path, dpi=150); plt.close()
+
+        def build_analisis_pdf():
+            pdf = FPDF(orientation='P', unit='mm', format='A4')
+            pdf.set_auto_page_break(auto=True, margin=15)
+            pdf.add_page()
+            # Encabezado
+            pdf.set_font("Arial", 'B', 16)
+            pdf.cell(0, 10, "ANALISIS DE RUIDO - RES 0627 DE 2006", ln=True, align='C')
+            pdf.set_font("Arial", '', 10)
+            pdf.cell(0, 6, f"Cliente: {cliente} | Proyecto: {proyecto} | Municipio: {muni} - {depto}", ln=True, align='C')
+            pdf.cell(0, 6, f"Fecha analisis: {datetime.date.today()} | Sector: {sector} | Periodo: {periodo} | Responsable: {responsable}", ln=True, align='C')
+            pdf.ln(5)
+            pdf.set_font("Arial", 'B', 11)
+            pdf.cell(0, 8, "1. Resultados de Medicion", ln=True)
+            pdf.set_font("Arial", '', 10)
+            # Tabla
+            pdf.set_fill_color(200,200,200)
+            pdf.cell(90, 8, "Concepto", border=1, fill=True, align='C')
+            pdf.cell(90, 8, "Valor dB(A)", border=1, fill=True, align='C', ln=True)
+            for _, row in df_res.iterrows():
+                pdf.cell(90, 7, row["Concepto"], border=1)
+                pdf.cell(90, 7, row["Valor"], border=1, ln=True)
+            pdf.ln(5)
+            pdf.set_font("Arial", 'B', 11)
+            pdf.cell(0, 8, "2. Grafica Time History (primeros 10 minutos)", ln=True)
+            pdf.image(graf_path, x=10, y=pdf.get_y(), w=190)
+            pdf.set_y(pdf.get_y()+65)
+            pdf.ln(5)
+            pdf.set_font("Arial", 'B', 11)
+            pdf.cell(0, 8, "3. Calculo de Emision segun Res 0627", ln=True)
+            pdf.set_font("Arial", '', 9)
+            pdf.multi_cell(0, 5, f"Formula: L_emision = 10*log10(10^(Ltotal/10) - 10^(Lresidual/10))\nLtotal = {leq_t:.1f} dB, Lresidual = {leq_r:.1f} dB => L_emision = {emision:.1f} dB(A)\n\nLimite permisible para {sector} en periodo {periodo}: {limite} dB(A)\nResultado: {cumple_icon}\n\nObservacion: Si Ltotal - Lresidual < 3 dB, el aporte es despreciable segun norma. Diferencia medida: {leq_t-leq_r:.1f} dB.")
+            pdf.ln(5)
+            pdf.set_font("Arial", 'B', 10)
+            pdf.cell(0, 6, f"Responsable de la Medicion: {responsable} ______________________", ln=True)
+            return BytesIO(pdf.output())
+
         def build_analisis_excel():
             wb=openpyxl.Workbook(); ws=wb.active; ws.title="Analisis 627"
             ws['A1']="ANALISIS RES 0627"; ws['A1'].font=Font(bold=True,size=12)
@@ -220,7 +263,9 @@ with tab3:
             ws['A6']="Concepto"; ws['B6']="Valor dB(A)"
             for i,row in df_res.iterrows():
                 ws.cell(row=7+i, column=1, value=row["Concepto"])
-                ws.cell(row=7+i, column=2, value=row["Valor dB(A)"])
+                ws.cell(row=7+i, column=2, value=row["Valor"])
             bio=BytesIO(); wb.save(bio); bio.seek(0); return bio
 
-        st.download_button("📥 DESCARGAR EXCEL ANALISIS 0627", build_analisis_excel(), f"Analisis_627_{muni}.xlsx", type="primary")
+        c1,c2 = st.columns(2)
+        c1.download_button("📄 DESCARGAR PDF ANALISIS CON GRAFICA", build_analisis_pdf(), f"Analisis_627_{muni}_{sector}.pdf", mime="application/pdf", type="primary", use_container_width=True)
+        c2.download_button("📊 DESCARGAR EXCEL ANALISIS", build_analisis_excel(), f"Analisis_627_{muni}.xlsx", use_container_width=True)
