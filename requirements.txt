@@ -4,3 +4,4 @@ Pillow
 fpdf2
 pandas
 numpy
+matplotlib
