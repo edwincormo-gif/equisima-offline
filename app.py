@@ -220,16 +220,16 @@ with tab3:
         graf_path = tempfile.NamedTemporaryFile(delete=False, suffix=".png").name
         plt.tight_layout(); plt.savefig(graf_path, dpi=150); plt.close()
 
-        def build_analisis_pdf():
+               def build_analisis_pdf():
             pdf = FPDF(orientation='P', unit='mm', format='A4')
             pdf.set_auto_page_break(auto=True, margin=15)
             pdf.add_page()
-            # Encabezado
+            # Encabezado sin acentos
             pdf.set_font("Arial", 'B', 16)
             pdf.cell(0, 10, "ANALISIS DE RUIDO - RES 0627 DE 2006", ln=True, align='C')
             pdf.set_font("Arial", '', 10)
             pdf.cell(0, 6, f"Cliente: {cliente} | Proyecto: {proyecto} | Municipio: {muni} - {depto}", ln=True, align='C')
-            pdf.cell(0, 6, f"Fecha analisis: {datetime.date.today()} | Sector: {sector} | Periodo: {periodo} | Responsable: {responsable}", ln=True, align='C')
+            pdf.cell(0, 6, f"Fecha: {datetime.date.today()} | Sector: {sector} | Periodo: {periodo} | Resp: {responsable}", ln=True, align='C')
             pdf.ln(5)
             pdf.set_font("Arial", 'B', 11)
             pdf.cell(0, 8, "1. Resultados de Medicion", ln=True)
@@ -239,23 +239,27 @@ with tab3:
             pdf.cell(90, 8, "Concepto", border=1, fill=True, align='C')
             pdf.cell(90, 8, "Valor dB(A)", border=1, fill=True, align='C', ln=True)
             for _, row in df_res.iterrows():
-                pdf.cell(90, 7, row["Concepto"], border=1)
-                pdf.cell(90, 7, row["Valor"], border=1, ln=True)
+                # Quitar acentos para pdf
+                concepto = row["Concepto"].encode('latin-1','ignore').decode('latin-1')
+                valor = row["Valor"].encode('latin-1','ignore').decode('latin-1')
+                pdf.cell(90, 7, concepto, border=1)
+                pdf.cell(90, 7, valor, border=1, ln=True)
             pdf.ln(5)
             pdf.set_font("Arial", 'B', 11)
-            pdf.cell(0, 8, "2. Grafica Time History (primeros 10 minutos)", ln=True)
+            pdf.cell(0, 8, "2. Grafica Time History (primeros 10 min)", ln=True)
             pdf.image(graf_path, x=10, y=pdf.get_y(), w=190)
             pdf.set_y(pdf.get_y()+65)
             pdf.ln(5)
             pdf.set_font("Arial", 'B', 11)
             pdf.cell(0, 8, "3. Calculo de Emision segun Res 0627", ln=True)
             pdf.set_font("Arial", '', 9)
-            pdf.multi_cell(0, 5, f"Formula: L_emision = 10*log10(10^(Ltotal/10) - 10^(Lresidual/10))\nLtotal = {leq_t:.1f} dB, Lresidual = {leq_r:.1f} dB => L_emision = {emision:.1f} dB(A)\n\nLimite permisible para {sector} en periodo {periodo}: {limite} dB(A)\nResultado: {cumple_icon}\n\nObservacion: Si Ltotal - Lresidual < 3 dB, el aporte es despreciable segun norma. Diferencia medida: {leq_t-leq_r:.1f} dB.")
+            # TEXTO SIN CARACTERES RAROS - AQUI ESTABA EL ERROR
+            txt = f"Formula: Le = 10*log10(10^(Lt/10) - 10^(Lr/10))\nLt = {leq_t:.1f} dB, Lr = {leq_r:.1f} dB => Le = {emision:.1f} dB(A)\n\nLimite para {sector} en {periodo}: {limite} dB(A)\nResultado: {cumple}\n\nDiferencia Lt-Lr: {leq_t-leq_r:.1f} dB. Si es <3 dB, aporte despreciable segun norma."
+            pdf.multi_cell(0, 5, txt)
             pdf.ln(5)
             pdf.set_font("Arial", 'B', 10)
-            pdf.cell(0, 6, f"Responsable de la Medicion: {responsable} ______________________", ln=True)
+            pdf.cell(0, 6, f"Responsable: {responsable} ______________________", ln=True)
             return BytesIO(pdf.output())
-
         def build_analisis_excel():
             wb=openpyxl.Workbook(); ws=wb.active; ws.title="Analisis 627"
             ws['A1']="ANALISIS RES 0627"; ws['A1'].font=Font(bold=True,size=12)
