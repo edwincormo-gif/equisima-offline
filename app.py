@@ -10,11 +10,9 @@ st.title("EQUISIMA - Formato Campo R2-POE37-EP V04")
 if "puntos" not in st.session_state:
     st.session_state.puntos = []
 
-# 3 PESTAÑAS DE VUELTA
 tab1, tab2, tab3 = st.tabs(["📋 DATOS DE CAMPO", "🗺️ PUNTOS GUARDADOS", "📸 FOTOS Y EXCEL"])
 
 with tab1:
-    st.subheader("Datos Generales")
     c1,c2,c3 = st.columns(3)
     with c1:
         cliente = st.text_input("CLIENTE", "Rueda Inversiones S A S")
@@ -26,9 +24,8 @@ with tab1:
         punto_mon = st.text_input("PUNTO DE MONITOREO", "Punto 1 nocturno")
         coord = st.text_input("COORDENADAS", "3°35'11.30\"N 75°23'27.72\"W")
     with c3:
-        marca = st.text_input("SONOMETRO MARCA", "HD2010UC/A")
-        serie = st.text_input("SONOMETRO SERIE", "15031643825")
         desc_punto = st.text_area("DESCRIPCIÓN DEL PUNTO", "En la entrada o vía principal")
+        barrido = st.text_input("Barrido Perimetral (dB)", "68")
 
     st.divider()
     col1,col2,col3,col4 = st.columns(4)
@@ -49,7 +46,6 @@ with tab1:
         fuente = st.text_input("Fuente Ruido", "mineria")
         tipo = st.selectbox("Tipo Ruido", ["EMISION","RESIDUAL"])
 
-    barrido = st.text_input("Barrido Perimetral (dB)", "68")
     obs = st.text_area("Observaciones")
 
     if st.button("📍 AGREGAR PUNTO", type="primary", use_container_width=True):
@@ -64,10 +60,8 @@ with tab1:
         st.balloons()
 
 with tab2:
-    st.subheader(f"Puntos guardados: {len(st.session_state.puntos)}")
     if st.session_state.puntos:
-        df = pd.DataFrame(st.session_state.puntos)
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(pd.DataFrame(st.session_state.puntos), use_container_width=True)
         if st.button("🗑️ Borrar todo"):
             st.session_state.puntos = []
             st.rerun()
@@ -75,61 +69,72 @@ with tab2:
         st.info("Aún no has agregado puntos")
 
 with tab3:
-    st.subheader("Fotos y Descarga Final")
-    fotos_up = st.file_uploader("Sube fotos JPG/PNG", type=["jpg","jpeg","png"], accept_multiple_files=True, key="uploader_fotos_final")
+    fotos_up = st.file_uploader("Sube fotos", type=["jpg","jpeg","png"], accept_multiple_files=True, key="uploader_fotos_final_v3")
     if fotos_up:
         for f in fotos_up:
-            st.image(f, width=200, caption=f.name)
+            st.image(f, width=200)
 
     st.divider()
     if not st.session_state.puntos:
-        st.warning("Agrega puntos en pestaña 1 para descargar")
+        st.warning("Agrega puntos en pestaña 1")
     else:
-        st.success(f"{len(st.session_state.puntos)} puntos listos para descargar en formato original")
-        try:
-            wb = load_workbook("plantilla.xlsx")
-            ws = wb["Datos de Campo Emision"]
+        st.success(f"{len(st.session_state.puntos)} punto(s) listos")
+        # BOTON QUE ARREGLA EL ERROR DE MERGEDCELL
+        if st.button("📥 GENERAR EXCEL ORIGINAL", type="primary", use_container_width=True):
+            try:
+                wb = load_workbook("plantilla.xlsx")
+                ws = wb["Datos de Campo Emision"]
 
-            # Llenar encabezado donde va en tu plantilla original
-            ws["E8"] = st.session_state.puntos[0]["cliente"]
-            ws["E9"] = st.session_state.puntos[0]["proyecto"]
-            ws["E10"] = st.session_state.puntos[0]["depto"]
-            ws["E11"] = st.session_state.puntos[0]["muni"]
-            ws["E12"] = st.session_state.puntos[0]["plan"]
-            ws["D15"] = st.session_state.puntos[0]["punto"]
-            ws["L15"] = st.session_state.puntos[0]["coord"]
-            ws["F16"] = st.session_state.puntos[0]["desc"]
-            ws["F17"] = st.session_state.puntos[0]["barrido"]
+                def escribir(celda_texto, valor):
+                    # Si la celda está combinada, escribe en la celda madre
+                    cell = ws[celda_texto]
+                    if str(type(cell)) == "<class 'openpyxl.cell.cell.MergedCell'>":
+                        for rango in ws.merged_cells.ranges:
+                            if cell.coordinate in rango:
+                                ws.cell(row=rango.min_row, column=rango.min_col).value = valor
+                                return
+                    else:
+                        ws[celda_texto] = valor
 
-            # Datos desde fila 21 como en tu original
-            fila = 21
-            for p in st.session_state.puntos:
-                ws.cell(row=fila, column=2).value = p["fecha"]
-                ws.cell(row=fila, column=3).value = p["hora"]
-                ws.cell(row=fila, column=4).value = p["calib"]
-                ws.cell(row=fila, column=5).value = p["memoria"]
-                ws.cell(row=fila, column=6).value = p["laeq"]
-                ws.cell(row=fila, column=7).value = p["vel"]
-                ws.cell(row=fila, column=8).value = p["dirv"]
-                ws.cell(row=fila, column=9).value = p["temp"]
-                ws.cell(row=fila, column=10).value = p["hum"]
-                ws.cell(row=fila, column=11).value = p["precip"]
-                ws.cell(row=fila, column=12).value = p["fuente"]
-                ws.cell(row=fila, column=13).value = p["tipo"]
-                ws.cell(row=fila, column=14).value = p["obs"]
-                fila += 1
+                p0 = st.session_state.puntos[0]
+                escribir("E8", p0["cliente"])
+                escribir("E9", p0["proyecto"])
+                escribir("E10", p0["depto"])
+                escribir("E11", p0["muni"])
+                escribir("E12", p0["plan"])
+                escribir("D15", p0["punto"])
+                escribir("L15", p0["coord"])
+                escribir("F16", p0["desc"])
+                escribir("F17", p0["barrido"])
 
-            output = io.BytesIO()
-            wb.save(output)
+                fila = 21
+                for p in st.session_state.puntos:
+                    ws.cell(row=fila, column=2).value = p["fecha"]
+                    ws.cell(row=fila, column=3).value = p["hora"]
+                    ws.cell(row=fila, column=4).value = p["calib"]
+                    ws.cell(row=fila, column=5).value = p["memoria"]
+                    ws.cell(row=fila, column=6).value = p["laeq"]
+                    ws.cell(row=fila, column=7).value = p["vel"]
+                    ws.cell(row=fila, column=8).value = p["dirv"]
+                    ws.cell(row=fila, column=9).value = p["temp"]
+                    ws.cell(row=fila, column=10).value = p["hum"]
+                    ws.cell(row=fila, column=11).value = p["precip"]
+                    ws.cell(row=fila, column=12).value = p["fuente"]
+                    ws.cell(row=fila, column=13).value = p["tipo"]
+                    ws.cell(row=fila, column=14).value = p["obs"]
+                    fila += 1
 
-            st.download_button(
-                "📥 DESCARGAR EXCEL IDÉNTICO A PLANTILLA ORIGINAL",
-                output.getvalue(),
-                file_name=f"R2-POE37-EP_{st.session_state.puntos[0]['muni']}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                type="primary"
-            )
-        except Exception as e:
-            st.error(f"No encuentro plantilla.xlsx en el repo: {e}")
-            st.info("Verifica que plantilla.xlsx esté en la raíz al lado de app.py")
+                output = io.BytesIO()
+                wb.save(output)
+
+                st.download_button(
+                    "📥 DESCARGAR AHORA EXCEL IDÉNTICO",
+                    output.getvalue(),
+                    file_name=f"R2-POE37-EP_{p0['muni']}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    type="primary"
+                )
+                st.success("¡Excel generado con tu formato original!")
+            except Exception as e:
+                st.error(f"Error: {e}")
