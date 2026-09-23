@@ -27,7 +27,6 @@ with tab1:
         desc_punto = st.text_area("DESCRIPCIÓN DEL PUNTO", "En la entrada o vía principal")
         barrido = st.text_input("Barrido Perimetral (dB)", "68")
 
-    st.divider()
     col1,col2,col3,col4 = st.columns(4)
     with col1:
         fecha = st.date_input("Fecha", datetime(2026,9,9))
@@ -62,14 +61,11 @@ with tab1:
 with tab2:
     if st.session_state.puntos:
         st.dataframe(pd.DataFrame(st.session_state.puntos), use_container_width=True)
-        if st.button("🗑️ Borrar todo"):
-            st.session_state.puntos = []
-            st.rerun()
     else:
         st.info("Aún no has agregado puntos")
 
 with tab3:
-    fotos_up = st.file_uploader("Sube fotos", type=["jpg","jpeg","png"], accept_multiple_files=True, key="uploader_fotos_final_v3")
+    fotos_up = st.file_uploader("Sube fotos", type=["jpg","jpeg","png"], accept_multiple_files=True, key="fotos_v4_final")
     if fotos_up:
         for f in fotos_up:
             st.image(f, width=200)
@@ -78,34 +74,30 @@ with tab3:
     if not st.session_state.puntos:
         st.warning("Agrega puntos en pestaña 1")
     else:
-        st.success(f"{len(st.session_state.puntos)} punto(s) listos")
-        # BOTON QUE ARREGLA EL ERROR DE MERGEDCELL
         if st.button("📥 GENERAR EXCEL ORIGINAL", type="primary", use_container_width=True):
             try:
                 wb = load_workbook("plantilla.xlsx")
                 ws = wb["Datos de Campo Emision"]
 
-                def escribir(celda_texto, valor):
-                    # Si la celda está combinada, escribe en la celda madre
-                    cell = ws[celda_texto]
-                    if str(type(cell)) == "<class 'openpyxl.cell.cell.MergedCell'>":
-                        for rango in ws.merged_cells.ranges:
-                            if cell.coordinate in rango:
-                                ws.cell(row=rango.min_row, column=rango.min_col).value = valor
-                                return
-                    else:
-                        ws[celda_texto] = valor
+                def set_val(r, c, val):
+                    # Función que SÍ escribe en celdas combinadas
+                    for mr in ws.merged_cells.ranges:
+                        if mr.min_row <= r <= mr.max_row and mr.min_col <= c <= mr.max_col:
+                            ws.cell(row=mr.min_row, column=mr.min_col).value = val
+                            return
+                    ws.cell(row=r, column=c).value = val
 
                 p0 = st.session_state.puntos[0]
-                escribir("E8", p0["cliente"])
-                escribir("E9", p0["proyecto"])
-                escribir("E10", p0["depto"])
-                escribir("E11", p0["muni"])
-                escribir("E12", p0["plan"])
-                escribir("D15", p0["punto"])
-                escribir("L15", p0["coord"])
-                escribir("F16", p0["desc"])
-                escribir("F17", p0["barrido"])
+                # E8= fila8 col5, E9=9,5, E10=10,5, E11=11,5, E12=12,5
+                set_val(8,5,p0["cliente"])
+                set_val(9,5,p0["proyecto"])
+                set_val(10,5,p0["depto"])
+                set_val(11,5,p0["muni"])
+                set_val(12,5,p0["plan"])
+                set_val(15,4,p0["punto"]) # D15
+                set_val(15,12,p0["coord"]) # L15
+                set_val(16,6,p0["desc"]) # F16
+                set_val(17,6,p0["barrido"]) # F17
 
                 fila = 21
                 for p in st.session_state.puntos:
@@ -135,6 +127,5 @@ with tab3:
                     use_container_width=True,
                     type="primary"
                 )
-                st.success("¡Excel generado con tu formato original!")
             except Exception as e:
                 st.error(f"Error: {e}")
