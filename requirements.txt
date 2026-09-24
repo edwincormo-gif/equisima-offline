@@ -1,7 +1,6 @@
 streamlit
-openpyxl
-Pillow
-fpdf2
 pandas
+openpyxl
 numpy
 matplotlib
+Pillow
