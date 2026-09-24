@@ -12,8 +12,8 @@ from PIL import Image as PILImage
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 
-st.set_page_config(page_title="EQUISIMA FINAL CSV", layout="wide")
-st.title("EQUISIMA - R2-POE37-EP V04 + CSV SONOMETRO")
+st.set_page_config(page_title="EQUISIMA FINAL V12", layout="wide")
+st.title("EQUISIMA - R2-POE37-EP V04 + CSV FIX")
 
 if "puntos" not in st.session_state:
     st.session_state.puntos = []
@@ -37,7 +37,6 @@ def leer_excel_sonometro(file):
     try:
         df = None
         nombre = file.name.lower()
-        # SOPORTE CSV - TUS ARCHIVOS ensendida.csv / apagada.csv
         if nombre.endswith(".csv"):
             try:
                 df = pd.read_csv(file, sep=None, engine='python', encoding='latin1')
@@ -58,7 +57,6 @@ def leer_excel_sonometro(file):
                     break
             df = pd.read_excel(file, sheet_name=hoja)
 
-        # Busca columna con dB
         mejor_col = None
         mejor_len = 0
         for col in df.columns:
@@ -81,6 +79,11 @@ def leer_excel_sonometro(file):
                         break
                 except:
                     continue
+
+        # Limpiar serie para graficas
+        if mejor_col is not None:
+            mejor_col = mejor_col.reset_index(drop=True)
+            mejor_col.name = "dB"
 
         return mejor_col, hoja, df
     except Exception as e:
@@ -136,24 +139,21 @@ def crear_excel_original(puntos, foto_mapa=None):
     ws.merge_cells("A11:I11")
     ws["A11"] = "DATOS DE LA MEDICION"; ws["A11"].font = bold10; ws["A11"].fill = fill_gray; ws["A11"].alignment = center
 
-    headers = ["PUNTO","HORA","MEMORIA","CALIB","LAeq","VEL","DIR","TEMP","HUM","BARRIDO","LIMITE","CUMPLE","SECTOR"]
+    headers = ["PUNTO","HORA","MEMORIA","CALIB","LAeq","VEL","DIR","TEMP","HUM"]
     for i,h in enumerate(headers, start=1):
-        if i>9: break
         c = ws.cell(row=12, column=i, value=h); c.font = bold; c.fill = fill_gray; c.border = border; c.alignment = center
 
     fila = 13
     for pt in puntos:
         vals = [pt.get("PUNTO",""), pt.get("HORA",""), pt.get("MEMORIA",""), pt.get("CALIB",""), pt.get("LAEQ",""), pt.get("VEL",""), pt.get("DIR",""), pt.get("TEMP",""), pt.get("HUM","")]
         for col,v in enumerate(vals, start=1):
-            if col>9: break
             cell = ws.cell(row=fila, column=col, value=v); cell.border = border; cell.alignment = center; cell.font = normal
         fila+=1
 
     fila_mapa = fila+1
     ws.merge_cells(f"A{fila_mapa}:I{fila_mapa}")
-    ws[f"A{fila_mapa}"] = "UBICACION GEOGRAFICA DEL PUNTO"; ws[f"A{fila_mapa}"].font = bold10; ws[f"A{fila_mapa}"].fill = fill_gray; ws[f"A{fila_mapa}"].alignment = center
+    ws[f"A{fila_mapa}"] = "UBICACION GEOGRAFICA"; ws[f"A{fila_mapa}"].font = bold10; ws[f"A{fila_mapa}"].fill = fill_gray; ws[f"A{fila_mapa}"].alignment = center
     ws.merge_cells(f"A{fila_mapa+1}:I{fila_mapa+6}")
-    ws[f"A{fila_mapa+1}"].alignment = center
     for r in range(fila_mapa+1, fila_mapa+7):
         ws.row_dimensions[r].height = 25
 
@@ -169,12 +169,6 @@ def crear_excel_original(puntos, foto_mapa=None):
             ws.add_image(img)
         except: pass
 
-    fila_resp = fila_mapa+8
-    ws[f"A{fila_resp}"] = "Responsable:"; ws[f"A{fila_resp}"].font = bold
-    ws.merge_cells(f"B{fila_resp}:D{fila_resp}"); ws[f"B{fila_resp}"].border = border
-    ws[f"E{fila_resp}"] = "Firma:"; ws[f"E{fila_resp}"].font = bold
-    ws.merge_cells(f"F{fila_resp}:I{fila_resp}"); ws[f"F{fila_resp}"].border = border
-
     for i in range(1,10):
         ws.column_dimensions[get_column_letter(i)].width = 14
 
@@ -183,7 +177,7 @@ def crear_excel_original(puntos, foto_mapa=None):
     out.seek(0)
     return out
 
-tab1, tab2, tab3 = st.tabs(["📋 1. FORMATO ORIGINAL", "📸 2. FOTOS PUNTO A PUNTO", "📊 3. SONOMETRO PDF"])
+tab1, tab2, tab3 = st.tabs(["📋 1. FORMATO ORIGINAL", "📸 2. FOTOS", "📊 3. SONOMETRO PDF"])
 
 with tab1:
     st.subheader("Pestaña 1 - Formato original")
@@ -195,7 +189,7 @@ with tab1:
         punto = st.text_input("PUNTO No", "Punto 1 nocturno")
         coord_n = st.text_input("COORD ORIGEN NACIONAL", "3°35'11.30\"N 75°23'27.72\"W")
         coord_c12 = st.text_input("COORD CTM12", "E 876543 N 912345")
-        desc = st.text_area("DESCRIPCION DEL PUNTO", "En la entrada o vía principal")
+        desc = st.text_area("DESCRIPCION", "En la entrada o vía principal")
     with c2:
         proyecto = st.text_input("PROYECTO", "Ataco Tolima")
         fecha = st.date_input("FECHA", datetime.now())
@@ -228,7 +222,7 @@ with tab1:
         st.dataframe(pd.DataFrame(st.session_state.puntos), use_container_width=True)
         if st.button("📥 GENERAR EXCEL ORIGINAL", type="primary", use_container_width=True):
             excel_file = crear_excel_original(st.session_state.puntos, mapa)
-            st.download_button("📥 DESCARGAR EXCEL ORIGINAL", excel_file.getvalue(), f"R2-POE37-EP_V04_{municipio}_{punto}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, type="primary")
+            st.download_button("📥 DESCARGAR EXCEL", excel_file.getvalue(), f"R2-POE37-EP_V04_{municipio}_{punto}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, type="primary")
 
 with tab2:
     st.subheader("Pestaña 2 - Fotos")
@@ -242,22 +236,19 @@ with tab2:
             if sel not in st.session_state.fotos_puntos:
                 st.session_state.fotos_puntos[sel] = []
             st.session_state.fotos_puntos[sel].extend(fotos)
-            st.success(f"{len(fotos)} fotos en {sel}")
+            st.success(f"{len(fotos)} fotos")
         for pn, lista in st.session_state.fotos_puntos.items():
             st.write(f"**{pn}** {len(lista)} fotos")
             cols = st.columns(5)
             for i,f in enumerate(lista):
                 cols[i%5].image(f, width=100)
-        if st.session_state.fotos_puntos and st.button("📦 ZIP PUNTO A PUNTO", type="primary", use_container_width=True):
+        if st.session_state.fotos_puntos and st.button("📦 ZIP", type="primary", use_container_width=True):
             zb = io.BytesIO()
             with zipfile.ZipFile(zb, "w") as zf:
                 for pn, lista in st.session_state.fotos_puntos.items():
                     carp = pn.replace(" ","_")
                     for idx,f in enumerate(lista):
                         zf.writestr(f"{carp}/foto_{idx+1}_{f.name}", f.getvalue())
-                df = pd.DataFrame(st.session_state.puntos)
-                eb = io.BytesIO(); df.to_excel(eb, index=False)
-                zf.writestr("FORMATO_ORIGINAL/listado.xlsx", eb.getvalue())
             zb.seek(0)
             st.download_button("📥 DESCARGAR ZIP", zb.getvalue(), "FOTOS_PUNTO_A_PUNTO.zip", use_container_width=True, type="primary")
 
@@ -278,7 +269,10 @@ with tab3:
         if serie_total is not None:
             leq_total = calcular_leq(serie_total)
             st.success(f"TOTAL {hoja} - {len(serie_total)} datos - {leq_total:.1f} dB")
-            st.line_chart(serie_total)
+            # FIX ERROR DE TU CAPTURA - AHORA USA DATAFRAME LIMPIO
+            chart_df = pd.DataFrame({"TOTAL dB": serie_total.values})
+            st.line_chart(chart_df)
+
             leq_res = None
             serie_res = None
             if f_res:
@@ -286,11 +280,14 @@ with tab3:
                 if serie_res is not None:
                     leq_res = calcular_leq(serie_res)
                     st.info(f"RESIDUAL {leq_res:.1f} dB")
+                    chart_res = pd.DataFrame({"RESIDUAL dB": serie_res.values})
+                    st.line_chart(chart_res)
+
             if leq_res:
                 dif = leq_total - leq_res
                 if dif < 3:
                     leq_corr = leq_total
-                    cumple3 = f"No medible (<3dB) - Dif {dif:.1f}dB"
+                    cumple3 = f"No medible Dif {dif:.1f}dB"
                 elif dif > 10:
                     leq_corr = leq_total
                     cumple3 = "CUMPLE" if leq_corr <= limite3 else "NO CUMPLE"
@@ -324,10 +321,10 @@ Fecha: {datetime.now()}
                     ax1.text(0.05,0.95, txt, fontsize=11, va='top', fontfamily='monospace')
                     pdf.savefig(fig1); plt.close(fig1)
                     fig2, ax2 = plt.subplots(figsize=(10,5))
-                    ax2.plot(serie_total.values, label="TOTAL (Encendida)", linewidth=1)
+                    ax2.plot(serie_total.values, label="TOTAL Encendida", linewidth=1)
                     if serie_res is not None:
-                        ax2.plot(serie_res.values, label="RESIDUAL (Apagada)", alpha=0.7, linewidth=1)
-                    ax2.axhline(limite3, color='r', ls='--', label=f"Limite {limite3} dB")
+                        ax2.plot(serie_res.values, label="RESIDUAL Apagada", alpha=0.7, linewidth=1)
+                    ax2.axhline(limite3, color='r', ls='--', label=f"Limite {limite3}")
                     ax2.set_title(f"Time History - {cumple3}")
                     ax2.set_ylabel("dB(A)"); ax2.set_xlabel("Muestras"); ax2.legend(); ax2.grid(alpha=0.3)
                     pdf.savefig(fig2); plt.close(fig2)
@@ -338,4 +335,3 @@ Fecha: {datetime.now()}
             st.error(f"No encontré dB en {hoja}")
             if df_raw is not None:
                 st.dataframe(df_raw.head(20))
-                st.write(f"Columnas detectadas: {list(df_raw.columns)}")
