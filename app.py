@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import os
 
-st.set_page_config(page_title="EQUISIMA FINAL V13.2 - COMPLETO", layout="wide")
+st.set_page_config(page_title="EQUISIMA FINAL V13.3 - FIX MERGED", layout="wide")
 st.title("EQUISIMA - R2-POE37-EP V04 + PLANTILLA TAL CUAL")
 
 if "puntos" not in st.session_state:
@@ -84,49 +84,67 @@ def leer_excel_sonometro(file):
         return None, str(e), None
 
 def crear_excel_con_plantilla_oficial(puntos, foto_mapa=None, plantilla_path="plantilla.xlsx", escenario=None):
+    from openpyxl.cell.cell import MergedCell
+    from openpyxl.utils import get_column_letter
+    def safe_set(ws, r, c, val):
+        try:
+            cell = ws.cell(row=r, column=c)
+            if isinstance(cell, MergedCell):
+                for mr in ws.merged_cells.ranges:
+                    if mr.min_row <= r <= mr.max_row and mr.min_col <= c <= mr.max_col:
+                        ws.cell(row=mr.min_row, column=mr.min_col).value = val
+                        return
+            else:
+                cell.value = val
+        except:
+            try:
+                ws[f"{get_column_letter(c)}{r}"] = val
+            except:
+                pass
+
     if os.path.exists(plantilla_path):
         wb = load_workbook(plantilla_path)
         ws = wb["Datos de Campo Emision"] if "Datos de Campo Emision" in wb.sheetnames else wb.active
         p0 = puntos[0] if puntos else {}
-        ws['E8'] = p0.get("CLIENTE","")
-        ws['E9'] = p0.get("PROYECTO","")
-        ws['E10'] = p0.get("DEPTO","")
-        ws['E11'] = p0.get("MUNICIPIO","")
-        ws['E12'] = p0.get("FUENTE","")
-        ws['D15'] = p0.get("PUNTO","")
-        ws['B16'] = p0.get("DESC","")
-        ws['B25'] = p0.get("ESQUEMA","")
 
-        # ESCENARIO Q15-Q17
+        safe_set(ws, 8, 5, p0.get("CLIENTE",""))
+        safe_set(ws, 9, 5, p0.get("PROYECTO",""))
+        safe_set(ws, 10, 5, p0.get("DEPTO",""))
+        safe_set(ws, 11, 5, p0.get("MUNICIPIO",""))
+        safe_set(ws, 12, 5, p0.get("FUENTE",""))
+        safe_set(ws, 15, 4, p0.get("PUNTO",""))
+        safe_set(ws, 16, 2, p0.get("DESC",""))
+        safe_set(ws, 25, 2, p0.get("ESQUEMA",""))
+
         if escenario:
             q15 = f"Diurno: {'X' if escenario['diurno'] else ' '} Nocturno: {'X' if escenario['nocturno'] else ' '} Fuente Encendida: {'X' if escenario['encendida'] else ' '} Fuente Apagada: {'X' if escenario['apagada'] else ' '} "
             q16 = f"Sí: {'X' if escenario['residual']=='Sí' else ' '} No: {'X' if escenario['residual']=='No' else ' '} En caso de no, justique: {escenario['justificacion']}"
             q17 = f"Sí: {'X' if escenario['barrido']=='Sí' else ' '} No: {'X' if escenario['barrido']=='No' else ' '} "
-            ws['Q15'] = q15
-            ws['Q16'] = q16
-            ws['Q17'] = q17
+            safe_set(ws, 15, 17, q15)
+            safe_set(ws, 16, 17, q16)
+            safe_set(ws, 17, 17, q17)
             if len(puntos) > 1:
-                ws['Q27'] = q15
-                ws['Q28'] = q16
-                ws['Q29'] = q17
+                safe_set(ws, 27, 17, q15)
+                safe_set(ws, 28, 17, q16)
+                safe_set(ws, 29, 17, q17)
 
         fila_inicio = 19
         for idx, pt in enumerate(puntos):
             fila = fila_inicio + idx
             if fila > 22: break
-            ws.cell(row=fila, column=2, value=pt.get("FECHA",""))
-            ws.cell(row=fila, column=3, value=pt.get("HORA",""))
-            ws.cell(row=fila, column=4, value=f"Ini {pt.get('CALIB','114')} Fin {pt.get('CALIB','114')}")
-            ws.cell(row=fila, column=5, value=pt.get("MEMORIA",""))
-            ws.cell(row=fila, column=6, value=pt.get("LAEQ","")) # F LAeq,T
-            ws.cell(row=fila, column=7, value=pt.get("VEL","")) # G Vel
-            ws.cell(row=fila, column=8, value=pt.get("DIR","")) # H Dir
-            ws.cell(row=fila, column=9, value=pt.get("TEMP","")) # I Temp <- FIX HUMEDAD/TEMP
-            ws.cell(row=fila, column=10, value=pt.get("HUM","")) # J Hum
-            ws.cell(row=fila, column=11, value=pt.get("PRECIP","")) # K Precip
-            ws.cell(row=fila, column=12, value=pt.get("FUENTE","")) # L Fuente
-            ws.cell(row=fila, column=13, value=pt.get("TIPO_RUIDO","Continuo")) # M Tipo
-            ws.cell(row=fila, column=14, value=pt.get("TIEMPO_OP","60 min")) # N Tiempo Op
+            safe_set(ws, fila, 2, str(pt.get("FECHA","")))
+            safe_set(ws, fila, 3, str(pt.get("HORA","")))
+            safe_set(ws, fila, 4, f"Ini {pt.get('CALIB','114')} Fin {pt.get('CALIB','114')}")
+            safe_set(ws, fila, 5, str(pt.get("MEMORIA","")))
+            safe_set(ws, fila, 6, pt.get("LAEQ",""))
+            safe_set(ws, fila, 7, pt.get("VEL",""))
+            safe_set(ws, fila, 8, pt.get("DIR",""))
+            safe_set(ws, fila, 9, pt.get("TEMP",""))
+            safe_set(ws, fila, 10, pt.get("HUM",""))
+            safe_set(ws, fila, 11, pt.get("PRECIP",""))
+            safe_set(ws, fila, 12, pt.get("FUENTE",""))
+            safe_set(ws, fila, 13, pt.get("TIPO_RUIDO","Continuo"))
+            safe_set(ws, fila, 14, pt.get("TIEMPO_OP","60 min"))
 
         if foto_mapa:
             try:
@@ -160,7 +178,7 @@ tab1, tab2, tab3 = st.tabs(["📋 1. FORMATO ORIGINAL TAL CUAL", "📸 2. FOTOS"
 with tab1:
     st.subheader("Pestaña 1 - Formato oficial R2-POE37-EP V04")
     if not os.path.exists("plantilla.xlsx"):
-        st.warning("⚠️ Sube plantilla.xlsx para formato TAL CUAL")
+        st.warning("⚠️ Sube plantilla.xlsx al repo")
     else:
         st.success("✅ plantilla.xlsx encontrada")
 
@@ -172,7 +190,7 @@ with tab1:
         punto = st.text_input("PUNTO No", "Punto 1 nocturno")
         coord_n = st.text_input("COORD ORIGEN NACIONAL", "3°35'11.30\"N 75°23'27.72\"W")
         desc = st.text_area("DESCRIPCION", "En la entrada o vía principal")
-        fuente = st.text_input("Fuente de Ruido / Equipo", "mineria")
+        fuente = st.text_input("Fuente", "mineria")
     with c2:
         proyecto = st.text_input("PROYECTO", "Ataco Tolima")
         fecha = st.date_input("FECHA", datetime.now())
@@ -180,20 +198,16 @@ with tab1:
         hora_fin = st.text_input("HORA FIN", "21:16")
         calib = st.text_input("Calib dB", "114.0")
         memoria = st.text_input("Memoria No", "1")
-        laeq = st.number_input("LAeq,T (dB) In situ", 0.0, 140.0, 65.0)
-        vel = st.number_input("Velocidad Viento Máx (m/s)", 0.0, 20.0, 0.3)
-        dir_viento = st.text_input("Dirección Viento", "N")
+        laeq = st.number_input("LAeq,T", 0.0, 140.0, 65.0)
+        vel = st.number_input("Vel Viento (m/s)", 0.0, 20.0, 0.3)
+        dir_viento = st.text_input("Dir Viento", "N")
         temp = st.number_input("Temperatura (°C)", -10.0, 60.0, 29.0)
         hum = st.number_input("Humedad Relativa (%)", 0.0, 100.0, 75.0)
-        precip = st.selectbox("¿Precipitaciones Si/No?", ["No", "Sí"], 0)
+        precip = st.selectbox("¿Precipitaciones?", ["No", "Sí"], 0)
         tipo_ruido = st.selectbox("Tipo de Ruido", ["Continuo", "Intermitente"], 0)
         tiempo_op = st.text_input("Tiempo Operación", "60 min")
-
-    c3,c4 = st.columns(2)
-    with c3:
         sector = st.selectbox("SECTOR RES 627", list(NORMA.keys()), 2)
         periodo = st.selectbox("PERIODO", ["Diurno","Nocturno"], 1)
-    with c4:
         mapa = st.file_uploader("MAPA SATELITAL / ESQUEMA", type=["jpg","png","jpeg"])
         esquema_txt = st.text_area("Texto ESQUEMA PUNTO", "Norte: vía, Sur: casas a 15m")
 
@@ -204,8 +218,8 @@ with tab1:
         esc_diurno = st.checkbox("Diurno", value=(periodo=="Diurno"))
         esc_nocturno = st.checkbox("Nocturno", value=(periodo=="Nocturno"))
     with e2:
-        esc_encendida = st.checkbox("Fuente Encendida (TOTAL)", value=True)
-        esc_apagada = st.checkbox("Fuente Apagada (RESIDUAL)", value=False)
+        esc_encendida = st.checkbox("Fuente Encendida", value=True)
+        esc_apagada = st.checkbox("Fuente Apagada", value=False)
     with e3:
         mide_residual = st.selectbox("¿Mide Ruido Residual?", ["Sí", "No"], 0)
         barrido = st.selectbox("¿Barrido perimetral?", ["Sí", "No"], 0)
@@ -225,7 +239,7 @@ with tab1:
             "SECTOR": sector, "PERIODO": periodo, "LIMITE": limite, "CUMPLE": cumple,
             "ESQUEMA": esquema_txt
         })
-        st.success(f"Punto {punto} agregado con Temp {temp}°C y Hum {hum}%")
+        st.success(f"Punto {punto} agregado")
 
     if st.session_state.puntos:
         st.dataframe(pd.DataFrame(st.session_state.puntos), use_container_width=True)
@@ -319,8 +333,6 @@ LAeq Residual: {f'{leq_res:.1f} dB' if leq_res else 'No medido'}
 LAeq Corregido: {leq_corr if isinstance(leq_corr,str) else f'{leq_corr:.1f} dB'}
 Resultado: {cumple3}
 Temp: {p0.get('TEMP','')}C Hum: {p0.get('HUM','')}%
-Punto: {p0.get('PUNTO','')}
-Fecha: {datetime.now()}
 """
                     ax1.text(0.05,0.95, txt, fontsize=11, va='top', fontfamily='monospace')
                     pdf.savefig(fig1); plt.close(fig1)
