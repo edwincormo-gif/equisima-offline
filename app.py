@@ -4,15 +4,15 @@ import numpy as np
 import io
 import zipfile
 from datetime import datetime
-from openpyxl import Workbook, load_workbook
+from openpyxl import load_workbook
 from openpyxl.drawing.image import Image as ExcelImage
 from PIL import Image as PILImage
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import os
 
-st.set_page_config(page_title="EQUISIMA FINAL V13.3 - FIX MERGED", layout="wide")
-st.title("EQUISIMA - R2-POE37-EP V04 + PLANTILLA TAL CUAL")
+st.set_page_config(page_title="EQUISIMA V13.4 FIX DESCRIPCION+BARRIDO", layout="wide")
+st.title("EQUISIMA - R2-POE37-EP V04 FIX")
 
 if "puntos" not in st.session_state:
     st.session_state.puntos = []
@@ -102,49 +102,89 @@ def crear_excel_con_plantilla_oficial(puntos, foto_mapa=None, plantilla_path="pl
             except:
                 pass
 
+    def write_by_label_occurrence(ws, label_contains, values_list, col_offset=2):
+        """Busca todas las celdas que contienen label_contains y escribe values_list[i] al lado"""
+        label_contains = label_contains.lower()
+        ocurrencias = []
+        for row in ws.iter_rows():
+            for cell in row:
+                if cell.value and isinstance(cell.value, str) and label_contains in cell.value.lower():
+                    ocurrencias.append((cell.row, cell.column))
+        # ordenar por fila
+        ocurrencias = sorted(ocurrencias, key=lambda x: x[0])
+        for i, (r,c) in enumerate(ocurrencias):
+            if i < len(values_list):
+                # Para descripcion y barrido el area es grande, escribimos en C o D (col+2)
+                safe_set(ws, r, c+col_offset, values_list[i])
+
     if os.path.exists(plantilla_path):
         wb = load_workbook(plantilla_path)
         ws = wb["Datos de Campo Emision"] if "Datos de Campo Emision" in wb.sheetnames else wb.active
         p0 = puntos[0] if puntos else {}
 
+        # Encabezado general
         safe_set(ws, 8, 5, p0.get("CLIENTE",""))
         safe_set(ws, 9, 5, p0.get("PROYECTO",""))
         safe_set(ws, 10, 5, p0.get("DEPTO",""))
         safe_set(ws, 11, 5, p0.get("MUNICIPIO",""))
         safe_set(ws, 12, 5, p0.get("FUENTE",""))
-        safe_set(ws, 15, 4, p0.get("PUNTO",""))
-        safe_set(ws, 16, 2, p0.get("DESC",""))
-        safe_set(ws, 25, 2, p0.get("ESQUEMA",""))
 
+        # >>> FIX 1: PUNTO, DESCRIPCION y BARRIDO por ocurrencia (2 puntos) <<<
+        puntos_nombres = [p.get("PUNTO","") for p in puntos]
+        descripciones = [p.get("DESC","") for p in puntos]
+        barridos = [p.get("BARRIDO_DB","") for p in puntos]
+        coords = [p.get("COORD_N","") for p in puntos]
+
+        # Escribe cada ocurrencia de "PUNTO DE MONITOREO:" -> al lado va el nombre
+        write_by_label_occurrence(ws, "PUNTO DE MONITOREO:", puntos_nombres, col_offset=2)
+        # DESCRIPCION va al lado, no encima
+        write_by_label_occurrence(ws, "DESCRIPCIÓN DEL PUNTO", descripciones, col_offset=2)
+        # BARRIDO PERIMETRAL va al lado
+        write_by_label_occurrence(ws, "REGISTRO DEL BARRIDO PERIMETRAL", barridos, col_offset=2)
+        # Coordenadas
+        write_by_label_occurrence(ws, "COORDENADAS ORIGEN NACIONAL", coords, col_offset=2)
+
+        # ESCENARIO Q15-Q17 con X
         if escenario:
             q15 = f"Diurno: {'X' if escenario['diurno'] else ' '} Nocturno: {'X' if escenario['nocturno'] else ' '} Fuente Encendida: {'X' if escenario['encendida'] else ' '} Fuente Apagada: {'X' if escenario['apagada'] else ' '} "
             q16 = f"Sí: {'X' if escenario['residual']=='Sí' else ' '} No: {'X' if escenario['residual']=='No' else ' '} En caso de no, justique: {escenario['justificacion']}"
             q17 = f"Sí: {'X' if escenario['barrido']=='Sí' else ' '} No: {'X' if escenario['barrido']=='No' else ' '} "
-            safe_set(ws, 15, 17, q15)
-            safe_set(ws, 16, 17, q16)
-            safe_set(ws, 17, 17, q17)
-            if len(puntos) > 1:
-                safe_set(ws, 27, 17, q15)
-                safe_set(ws, 28, 17, q16)
-                safe_set(ws, 29, 17, q17)
+            write_by_label_occurrence(ws, "ESCENARIO DE MEDICIÓN:", [q15]*2, col_offset=2)
+            write_by_label_occurrence(ws, "¿Se realiza medición del Ruido Residual?", [q16]*2, col_offset=2)
+            write_by_label_occurrence(ws, "¿Se realiza el barrido perimetral al límite", [q17]*2, col_offset=2)
 
-        fila_inicio = 19
-        for idx, pt in enumerate(puntos):
-            fila = fila_inicio + idx
-            if fila > 22: break
-            safe_set(ws, fila, 2, str(pt.get("FECHA","")))
-            safe_set(ws, fila, 3, str(pt.get("HORA","")))
-            safe_set(ws, fila, 4, f"Ini {pt.get('CALIB','114')} Fin {pt.get('CALIB','114')}")
-            safe_set(ws, fila, 5, str(pt.get("MEMORIA","")))
-            safe_set(ws, fila, 6, pt.get("LAEQ",""))
-            safe_set(ws, fila, 7, pt.get("VEL",""))
-            safe_set(ws, fila, 8, pt.get("DIR",""))
-            safe_set(ws, fila, 9, pt.get("TEMP",""))
-            safe_set(ws, fila, 10, pt.get("HUM",""))
-            safe_set(ws, fila, 11, pt.get("PRECIP",""))
-            safe_set(ws, fila, 12, pt.get("FUENTE",""))
-            safe_set(ws, fila, 13, pt.get("TIPO_RUIDO","Continuo"))
-            safe_set(ws, fila, 14, pt.get("TIEMPO_OP","60 min"))
+        # TABLAS DE MEDICION - hay 2 tablas (busca "Fecha de Toma")
+        tablas_filas = []
+        for row in ws.iter_rows():
+            for cell in row:
+                if cell.value and isinstance(cell.value,str) and "Fecha de Toma" in cell.value:
+                    tablas_filas.append(cell.row)
+        tablas_filas = sorted(tablas_filas)
+        # Primera tabla para punto 0, segunda para punto 1
+        for idx, tabla_row in enumerate(tablas_filas):
+            if idx < len(puntos):
+                pt = puntos[idx]
+                fila = tabla_row + 1 # primera fila de datos
+                safe_set(ws, fila, 2, str(pt.get("FECHA","")))
+                safe_set(ws, fila, 3, str(pt.get("HORA","")))
+                safe_set(ws, fila, 4, f"Ini {pt.get('CALIB','114')} Fin {pt.get('CALIB','114')}")
+                safe_set(ws, fila, 5, str(pt.get("MEMORIA","")))
+                safe_set(ws, fila, 6, pt.get("LAEQ",""))
+                safe_set(ws, fila, 7, pt.get("VEL",""))
+                safe_set(ws, fila, 8, pt.get("DIR",""))
+                safe_set(ws, fila, 9, pt.get("TEMP",""))
+                safe_set(ws, fila, 10, pt.get("HUM",""))
+                safe_set(ws, fila, 11, pt.get("PRECIP",""))
+                safe_set(ws, fila, 12, pt.get("FUENTE",""))
+                safe_set(ws, fila, 13, pt.get("TIPO_RUIDO","Continuo"))
+                safe_set(ws, fila, 14, pt.get("TIEMPO_OP","60 min"))
+                # Calibracion inicial/final
+                safe_set(ws, fila, 4, pt.get("CALIB","114"))
+                safe_set(ws, fila+1, 4, pt.get("CALIB","114"))
+
+        # Esquema
+        esquemas = [p.get("ESQUEMA","") for p in puntos]
+        write_by_label_occurrence(ws, "DIBUJE EL ESQUEMA", esquemas, col_offset=2)
 
         if foto_mapa:
             try:
@@ -165,6 +205,7 @@ def crear_excel_con_plantilla_oficial(puntos, foto_mapa=None, plantilla_path="pl
         out.seek(0)
         return out
     else:
+        from openpyxl import Workbook
         wb = Workbook()
         ws = wb.active
         ws["A1"] = "SUBE plantilla.xlsx"
@@ -178,7 +219,7 @@ tab1, tab2, tab3 = st.tabs(["📋 1. FORMATO ORIGINAL TAL CUAL", "📸 2. FOTOS"
 with tab1:
     st.subheader("Pestaña 1 - Formato oficial R2-POE37-EP V04")
     if not os.path.exists("plantilla.xlsx"):
-        st.warning("⚠️ Sube plantilla.xlsx al repo")
+        st.warning("⚠️ Sube plantilla.xlsx")
     else:
         st.success("✅ plantilla.xlsx encontrada")
 
@@ -189,7 +230,8 @@ with tab1:
         depto = st.text_input("DEPARTAMENTO", "TOLIMA")
         punto = st.text_input("PUNTO No", "Punto 1 nocturno")
         coord_n = st.text_input("COORD ORIGEN NACIONAL", "3°35'11.30\"N 75°23'27.72\"W")
-        desc = st.text_area("DESCRIPCION", "En la entrada o vía principal")
+        desc = st.text_area("DESCRIPCIÓN DEL PUNTO DE MONITOREO", "ubicado al costado norte de la planta en porteria principal se evidencia alto flujo entrada y salida de vehiculos de carga", height=100)
+        barrido_db = st.text_input("REGISTRO BARRIDO PERIMETRAL (dB)", "68.5 / 70.2 / 69.1")
         fuente = st.text_input("Fuente", "mineria")
     with c2:
         proyecto = st.text_input("PROYECTO", "Ataco Tolima")
@@ -209,7 +251,7 @@ with tab1:
         sector = st.selectbox("SECTOR RES 627", list(NORMA.keys()), 2)
         periodo = st.selectbox("PERIODO", ["Diurno","Nocturno"], 1)
         mapa = st.file_uploader("MAPA SATELITAL / ESQUEMA", type=["jpg","png","jpeg"])
-        esquema_txt = st.text_area("Texto ESQUEMA PUNTO", "Norte: vía, Sur: casas a 15m")
+        esquema_txt = st.text_area("Texto ESQUEMA", "Norte: vía, Sur: casas a 15m")
 
     st.divider()
     st.markdown("### ✅ ESCENARIO DE MEDICIÓN")
@@ -227,30 +269,30 @@ with tab1:
 
     limite = NORMA[sector][periodo]
     cumple = "CUMPLE" if laeq <= limite else "NO CUMPLE"
-    st.info(f"Límite {limite} dB - {cumple} | Temp {temp}°C Hum {hum}%")
+    st.info(f"Límite {limite} dB - {cumple}")
 
     if st.button("📍 AGREGAR PUNTO", type="primary", use_container_width=True):
         st.session_state.puntos.append({
             "CLIENTE": cliente, "PROYECTO": proyecto, "MUNICIPIO": municipio, "DEPTO": depto,
-            "PUNTO": punto, "COORD_N": coord_n, "DESC": desc,
+            "PUNTO": punto, "COORD_N": coord_n, "DESC": desc, "BARRIDO_DB": barrido_db,
             "FECHA": str(fecha), "HORA": f"{hora}-{hora_fin}", "CALIB": calib, "MEMORIA": memoria,
             "LAEQ": laeq, "VEL": vel, "DIR": dir_viento, "TEMP": temp, "HUM": hum, "PRECIP": precip,
             "FUENTE": fuente, "TIPO_RUIDO": tipo_ruido, "TIEMPO_OP": tiempo_op,
             "SECTOR": sector, "PERIODO": periodo, "LIMITE": limite, "CUMPLE": cumple,
             "ESQUEMA": esquema_txt
         })
-        st.success(f"Punto {punto} agregado")
+        st.success(f"Punto {punto} agregado - Ahora soporta 2 puntos")
 
     if st.session_state.puntos:
-        st.dataframe(pd.DataFrame(st.session_state.puntos), use_container_width=True)
-        if st.button("📥 GENERAR EXCEL TAL CUAL + ESCENARIO + TEMP/HUM", type="primary", use_container_width=True):
+        st.dataframe(pd.DataFrame(st.session_state.puntos)[["PUNTO","DESC","BARRIDO_DB","LAEQ","TEMP","HUM"]], use_container_width=True)
+        if st.button("📥 GENERAR EXCEL V04 CON 2 PUNTOS", type="primary", use_container_width=True):
             escenario_data = {
                 "diurno": esc_diurno, "nocturno": esc_nocturno,
                 "encendida": esc_encendida, "apagada": esc_apagada,
                 "residual": mide_residual, "justificacion": justificacion, "barrido": barrido
             }
             excel_file = crear_excel_con_plantilla_oficial(st.session_state.puntos, mapa, "plantilla.xlsx", escenario_data)
-            st.download_button("📥 DESCARGAR EXCEL V04 COMPLETO", excel_file.getvalue(), f"R2-POE37-EP_V04_{municipio}_{punto}_COMPLETO.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, type="primary")
+            st.download_button("📥 DESCARGAR EXCEL V04", excel_file.getvalue(), f"R2-POE37-EP_V04_{municipio}_2PUNTOS.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, type="primary")
 
 with tab2:
     st.subheader("Pestaña 2 - Fotos")
@@ -329,10 +371,6 @@ with tab3:
                     txt = f"""INFORME RUIDO RES 627 - EQUISIMA
 Sector: {sector3} Periodo: {periodo3} Limite: {limite3} dB
 LAeq Total: {leq_total:.1f} dB
-LAeq Residual: {f'{leq_res:.1f} dB' if leq_res else 'No medido'}
-LAeq Corregido: {leq_corr if isinstance(leq_corr,str) else f'{leq_corr:.1f} dB'}
-Resultado: {cumple3}
-Temp: {p0.get('TEMP','')}C Hum: {p0.get('HUM','')}%
 """
                     ax1.text(0.05,0.95, txt, fontsize=11, va='top', fontfamily='monospace')
                     pdf.savefig(fig1); plt.close(fig1)
