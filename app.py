@@ -11,8 +11,8 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import os
 
-st.set_page_config(page_title="EQUISIMA V13.4 FIX DESCRIPCION+BARRIDO", layout="wide")
-st.title("EQUISIMA - R2-POE37-EP V04 FIX")
+st.set_page_config(page_title="EQUISIMA V13.5 FIX DEFINITIVO", layout="wide")
+st.title("EQUISIMA - R2-POE37-EP V04 FIX TITULO")
 
 if "puntos" not in st.session_state:
     st.session_state.puntos = []
@@ -86,6 +86,7 @@ def leer_excel_sonometro(file):
 def crear_excel_con_plantilla_oficial(puntos, foto_mapa=None, plantilla_path="plantilla.xlsx", escenario=None):
     from openpyxl.cell.cell import MergedCell
     from openpyxl.utils import get_column_letter
+
     def safe_set(ws, r, c, val):
         try:
             cell = ws.cell(row=r, column=c)
@@ -102,72 +103,79 @@ def crear_excel_con_plantilla_oficial(puntos, foto_mapa=None, plantilla_path="pl
             except:
                 pass
 
-    def write_by_label_occurrence(ws, label_contains, values_list, col_offset=2):
-        """Busca todas las celdas que contienen label_contains y escribe values_list[i] al lado"""
+    def write_by_label_occurrence(ws, label_contains, values_list):
+        """FIX DEFINITIVO: escribe DESPUES del merge del titulo, no encima"""
         label_contains = label_contains.lower()
         ocurrencias = []
-        for row in ws.iter_rows():
+        for row in ws.iter_rows(min_row=1, max_row=60, max_col=25):
             for cell in row:
-                if cell.value and isinstance(cell.value, str) and label_contains in cell.value.lower():
-                    ocurrencias.append((cell.row, cell.column))
-        # ordenar por fila
+                if cell.value and isinstance(cell.value, str):
+                    v = cell.value.strip()
+                    if label_contains in v.lower() and len(v) < 120:
+                        # Evita confundir valor con label
+                        if label_contains == "descripción del punto" and "ubicado" in v.lower():
+                            continue
+                        ocurrencias.append((cell.row, cell.column, cell.value))
+        # ordenar y quitar duplicados por fila
         ocurrencias = sorted(ocurrencias, key=lambda x: x[0])
-        for i, (r,c) in enumerate(ocurrencias):
+        seen_rows = set()
+        uniq = []
+        for r,c,txt in ocurrencias:
+            if r not in seen_rows:
+                uniq.append((r,c))
+                seen_rows.add(r)
+        for i, (r,c) in enumerate(uniq):
             if i < len(values_list):
-                # Para descripcion y barrido el area es grande, escribimos en C o D (col+2)
-                safe_set(ws, r, c+col_offset, values_list[i])
+                target_col = c + 2
+                # Si el label está mergeado, escribe después del merge
+                for mr in ws.merged_cells.ranges:
+                    if mr.min_row <= r <= mr.max_row and mr.min_col <= c <= mr.max_col:
+                        target_col = mr.max_col + 1
+                        break
+                safe_set(ws, r, target_col, values_list[i])
 
     if os.path.exists(plantilla_path):
         wb = load_workbook(plantilla_path)
         ws = wb["Datos de Campo Emision"] if "Datos de Campo Emision" in wb.sheetnames else wb.active
         p0 = puntos[0] if puntos else {}
 
-        # Encabezado general
         safe_set(ws, 8, 5, p0.get("CLIENTE",""))
         safe_set(ws, 9, 5, p0.get("PROYECTO",""))
         safe_set(ws, 10, 5, p0.get("DEPTO",""))
         safe_set(ws, 11, 5, p0.get("MUNICIPIO",""))
         safe_set(ws, 12, 5, p0.get("FUENTE",""))
 
-        # >>> FIX 1: PUNTO, DESCRIPCION y BARRIDO por ocurrencia (2 puntos) <<<
         puntos_nombres = [p.get("PUNTO","") for p in puntos]
         descripciones = [p.get("DESC","") for p in puntos]
         barridos = [p.get("BARRIDO_DB","") for p in puntos]
         coords = [p.get("COORD_N","") for p in puntos]
 
-        # Escribe cada ocurrencia de "PUNTO DE MONITOREO:" -> al lado va el nombre
-        write_by_label_occurrence(ws, "PUNTO DE MONITOREO:", puntos_nombres, col_offset=2)
-        # DESCRIPCION va al lado, no encima
-        write_by_label_occurrence(ws, "DESCRIPCIÓN DEL PUNTO", descripciones, col_offset=2)
-        # BARRIDO PERIMETRAL va al lado
-        write_by_label_occurrence(ws, "REGISTRO DEL BARRIDO PERIMETRAL", barridos, col_offset=2)
-        # Coordenadas
-        write_by_label_occurrence(ws, "COORDENADAS ORIGEN NACIONAL", coords, col_offset=2)
+        write_by_label_occurrence(ws, "PUNTO DE MONITOREO:", puntos_nombres)
+        write_by_label_occurrence(ws, "DESCRIPCIÓN DEL PUNTO", descripciones)
+        write_by_label_occurrence(ws, "REGISTRO DEL BARRIDO PERIMETRAL", barridos)
+        write_by_label_occurrence(ws, "COORDENADAS ORIGEN NACIONAL", coords)
 
-        # ESCENARIO Q15-Q17 con X
         if escenario:
             q15 = f"Diurno: {'X' if escenario['diurno'] else ' '} Nocturno: {'X' if escenario['nocturno'] else ' '} Fuente Encendida: {'X' if escenario['encendida'] else ' '} Fuente Apagada: {'X' if escenario['apagada'] else ' '} "
             q16 = f"Sí: {'X' if escenario['residual']=='Sí' else ' '} No: {'X' if escenario['residual']=='No' else ' '} En caso de no, justique: {escenario['justificacion']}"
             q17 = f"Sí: {'X' if escenario['barrido']=='Sí' else ' '} No: {'X' if escenario['barrido']=='No' else ' '} "
-            write_by_label_occurrence(ws, "ESCENARIO DE MEDICIÓN:", [q15]*2, col_offset=2)
-            write_by_label_occurrence(ws, "¿Se realiza medición del Ruido Residual?", [q16]*2, col_offset=2)
-            write_by_label_occurrence(ws, "¿Se realiza el barrido perimetral al límite", [q17]*2, col_offset=2)
+            write_by_label_occurrence(ws, "ESCENARIO DE MEDICIÓN:", [q15]*2)
+            write_by_label_occurrence(ws, "¿Se realiza medición del Ruido Residual?", [q16]*2)
+            write_by_label_occurrence(ws, "¿Se realiza el barrido perimetral al límite", [q17]*2)
 
-        # TABLAS DE MEDICION - hay 2 tablas (busca "Fecha de Toma")
+        # Tablas de medicion - detecta 2 tablas
         tablas_filas = []
-        for row in ws.iter_rows():
+        for row in ws.iter_rows(min_row=1, max_row=60):
             for cell in row:
                 if cell.value and isinstance(cell.value,str) and "Fecha de Toma" in cell.value:
                     tablas_filas.append(cell.row)
-        tablas_filas = sorted(tablas_filas)
-        # Primera tabla para punto 0, segunda para punto 1
+        tablas_filas = sorted(list(set(tablas_filas)))
         for idx, tabla_row in enumerate(tablas_filas):
             if idx < len(puntos):
                 pt = puntos[idx]
-                fila = tabla_row + 1 # primera fila de datos
+                fila = tabla_row + 1
                 safe_set(ws, fila, 2, str(pt.get("FECHA","")))
                 safe_set(ws, fila, 3, str(pt.get("HORA","")))
-                safe_set(ws, fila, 4, f"Ini {pt.get('CALIB','114')} Fin {pt.get('CALIB','114')}")
                 safe_set(ws, fila, 5, str(pt.get("MEMORIA","")))
                 safe_set(ws, fila, 6, pt.get("LAEQ",""))
                 safe_set(ws, fila, 7, pt.get("VEL",""))
@@ -178,13 +186,11 @@ def crear_excel_con_plantilla_oficial(puntos, foto_mapa=None, plantilla_path="pl
                 safe_set(ws, fila, 12, pt.get("FUENTE",""))
                 safe_set(ws, fila, 13, pt.get("TIPO_RUIDO","Continuo"))
                 safe_set(ws, fila, 14, pt.get("TIEMPO_OP","60 min"))
-                # Calibracion inicial/final
-                safe_set(ws, fila, 4, pt.get("CALIB","114"))
-                safe_set(ws, fila+1, 4, pt.get("CALIB","114"))
+                safe_set(ws, fila, 4, f"Ini {pt.get('CALIB','114')}")
+                safe_set(ws, fila+1, 4, f"Fin {pt.get('CALIB','114')}")
 
-        # Esquema
         esquemas = [p.get("ESQUEMA","") for p in puntos]
-        write_by_label_occurrence(ws, "DIBUJE EL ESQUEMA", esquemas, col_offset=2)
+        write_by_label_occurrence(ws, "DIBUJE EL ESQUEMA", esquemas)
 
         if foto_mapa:
             try:
@@ -223,6 +229,11 @@ with tab1:
     else:
         st.success("✅ plantilla.xlsx encontrada")
 
+    if st.button("🗑️ LIMPIAR PUNTOS VIEJOS (usa esto si te sale KeyError)", use_container_width=True):
+        st.session_state.puntos = []
+        st.session_state.fotos_puntos = {}
+        st.rerun()
+
     c1,c2 = st.columns(2)
     with c1:
         cliente = st.text_input("CLIENTE", "Rueda Inversiones S A S")
@@ -230,7 +241,7 @@ with tab1:
         depto = st.text_input("DEPARTAMENTO", "TOLIMA")
         punto = st.text_input("PUNTO No", "Punto 1 nocturno")
         coord_n = st.text_input("COORD ORIGEN NACIONAL", "3°35'11.30\"N 75°23'27.72\"W")
-        desc = st.text_area("DESCRIPCIÓN DEL PUNTO DE MONITOREO", "ubicado al costado norte de la planta en porteria principal se evidencia alto flujo entrada y salida de vehiculos de carga", height=100)
+        desc = st.text_area("DESCRIPCIÓN DEL PUNTO DE MONITOREO", "ubicado en la porteria se evidencia alto flujo de vehiculos", height=100)
         barrido_db = st.text_input("REGISTRO BARRIDO PERIMETRAL (dB)", "68.5 / 70.2 / 69.1")
         fuente = st.text_input("Fuente", "mineria")
     with c2:
@@ -281,10 +292,14 @@ with tab1:
             "SECTOR": sector, "PERIODO": periodo, "LIMITE": limite, "CUMPLE": cumple,
             "ESQUEMA": esquema_txt
         })
-        st.success(f"Punto {punto} agregado - Ahora soporta 2 puntos")
+        st.success(f"Punto {punto} agregado")
 
     if st.session_state.puntos:
-        st.dataframe(pd.DataFrame(st.session_state.puntos)[["PUNTO","DESC","BARRIDO_DB","LAEQ","TEMP","HUM"]], use_container_width=True)
+        df = pd.DataFrame(st.session_state.puntos)
+        for col in ["PUNTO","DESC","BARRIDO_DB","LAEQ","TEMP","HUM"]:
+            if col not in df.columns:
+                df[col] = ""
+        st.dataframe(df[["PUNTO","DESC","BARRIDO_DB","LAEQ","TEMP","HUM"]], use_container_width=True)
         if st.button("📥 GENERAR EXCEL V04 CON 2 PUNTOS", type="primary", use_container_width=True):
             escenario_data = {
                 "diurno": esc_diurno, "nocturno": esc_nocturno,
