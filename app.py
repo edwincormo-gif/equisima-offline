@@ -4,16 +4,17 @@ import numpy as np
 import io
 import zipfile
 from datetime import datetime
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image as ExcelImage
 from PIL import Image as PILImage
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
+import os
 
-st.set_page_config(page_title="EQUISIMA FINAL V12", layout="wide")
-st.title("EQUISIMA - R2-POE37-EP V04 + CSV FIX")
+st.set_page_config(page_title="EQUISIMA FINAL V13 - PLANTILLA TAL CUAL", layout="wide")
+st.title("EQUISIMA - R2-POE37-EP V04 + PLANTILLA TAL CUAL")
 
 if "puntos" not in st.session_state:
     st.session_state.puntos = []
@@ -56,7 +57,6 @@ def leer_excel_sonometro(file):
                     hoja = n
                     break
             df = pd.read_excel(file, sheet_name=hoja)
-
         mejor_col = None
         mejor_len = 0
         for col in df.columns:
@@ -68,7 +68,6 @@ def leer_excel_sonometro(file):
                         mejor_col = serie
             except:
                 continue
-
         if mejor_col is None:
             for col in df.columns:
                 try:
@@ -79,108 +78,82 @@ def leer_excel_sonometro(file):
                         break
                 except:
                     continue
-
-        # Limpiar serie para graficas
         if mejor_col is not None:
             mejor_col = mejor_col.reset_index(drop=True)
             mejor_col.name = "dB"
-
         return mejor_col, hoja, df
     except Exception as e:
         return None, str(e), None
 
-def crear_excel_original(puntos, foto_mapa=None):
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "DATOS DE CAMPO"
-    bold = Font(bold=True, size=9)
-    bold10 = Font(bold=True, size=10)
-    normal = Font(size=9)
-    fill_gray = PatternFill(start_color="C0C0C0", end_color="C0C0C0", fill_type="solid")
-    thin = Side(style="thin")
-    border = Border(left=thin, right=thin, top=thin, bottom=thin)
-    center = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    left = Alignment(horizontal="left", vertical="center", wrap_text=True)
-
-    ws.merge_cells("A1:I1")
-    ws["A1"] = "DATOS DE CAMPO EMISION DE RUIDO - R2-POE37-EP V04"
-    ws["A1"].font = Font(bold=True, size=12); ws["A1"].alignment = center; ws["A1"].fill = fill_gray
-
-    p = puntos[0] if puntos else {}
-    ws["A3"] = "CLIENTE:"; ws["A3"].font = bold; ws["A3"].fill = fill_gray
-    ws.merge_cells("B3:D3"); ws["B3"] = p.get("CLIENTE",""); ws["B3"].border = border
-    ws["E3"] = "PROYECTO:"; ws["E3"].font = bold; ws["E3"].fill = fill_gray
-    ws.merge_cells("F3:I3"); ws["F3"] = p.get("PROYECTO",""); ws["F3"].border = border
-
-    ws["A4"] = "MUNICIPIO:"; ws["A4"].font = bold; ws["A4"].fill = fill_gray
-    ws["B4"] = p.get("MUNICIPIO",""); ws["B4"].border = border
-    ws["C4"] = "DEPARTAMENTO:"; ws["C4"].font = bold; ws["C4"].fill = fill_gray
-    ws.merge_cells("D4:E4"); ws["D4"] = p.get("DEPTO",""); ws["D4"].border = border
-    ws["F4"] = "FECHA:"; ws["F4"].font = bold; ws["F4"].fill = fill_gray
-    ws.merge_cells("G4:I4"); ws["G4"] = p.get("FECHA",""); ws["G4"].border = border
-
-    ws.merge_cells("A5:I5")
-    ws["A5"] = "DATOS DEL PUNTO"; ws["A5"].font = bold10; ws["A5"].fill = fill_gray; ws["A5"].alignment = center
-
-    ws["A6"] = "PUNTO No:"; ws["A6"].font = bold; ws["A6"].fill = fill_gray
-    ws.merge_cells("B6:C6"); ws["B6"] = p.get("PUNTO",""); ws["B6"].border = border
-    ws["D6"] = "COORD ORIGEN NACIONAL:"; ws["D6"].font = bold; ws["D6"].fill = fill_gray
-    ws.merge_cells("E6:I6"); ws["E6"] = p.get("COORD_N",""); ws["E6"].border = border
-
-    ws["A7"] = "COORD CTM12:"; ws["A7"].font = bold; ws["A7"].fill = fill_gray
-    ws.merge_cells("B7:I7"); ws["B7"] = p.get("COORD_C12",""); ws["B7"].border = border
-
-    ws["A8"] = "DESCRIPCION PUNTO:"; ws["A8"].font = bold; ws["A8"].fill = fill_gray
-    ws.merge_cells("B8:I9"); ws["B8"] = p.get("DESC",""); ws["B8"].border = border; ws["B8"].alignment = left
-
-    ws["A10"] = "FUENTES:"; ws["A10"].font = bold; ws["A10"].fill = fill_gray
-    ws.merge_cells("B10:I10"); ws["B10"] = p.get("FUENTE",""); ws["B10"].border = border
-
-    ws.merge_cells("A11:I11")
-    ws["A11"] = "DATOS DE LA MEDICION"; ws["A11"].font = bold10; ws["A11"].fill = fill_gray; ws["A11"].alignment = center
-
-    headers = ["PUNTO","HORA","MEMORIA","CALIB","LAeq","VEL","DIR","TEMP","HUM"]
-    for i,h in enumerate(headers, start=1):
-        c = ws.cell(row=12, column=i, value=h); c.font = bold; c.fill = fill_gray; c.border = border; c.alignment = center
-
-    fila = 13
-    for pt in puntos:
-        vals = [pt.get("PUNTO",""), pt.get("HORA",""), pt.get("MEMORIA",""), pt.get("CALIB",""), pt.get("LAEQ",""), pt.get("VEL",""), pt.get("DIR",""), pt.get("TEMP",""), pt.get("HUM","")]
-        for col,v in enumerate(vals, start=1):
-            cell = ws.cell(row=fila, column=col, value=v); cell.border = border; cell.alignment = center; cell.font = normal
-        fila+=1
-
-    fila_mapa = fila+1
-    ws.merge_cells(f"A{fila_mapa}:I{fila_mapa}")
-    ws[f"A{fila_mapa}"] = "UBICACION GEOGRAFICA"; ws[f"A{fila_mapa}"].font = bold10; ws[f"A{fila_mapa}"].fill = fill_gray; ws[f"A{fila_mapa}"].alignment = center
-    ws.merge_cells(f"A{fila_mapa+1}:I{fila_mapa+6}")
-    for r in range(fila_mapa+1, fila_mapa+7):
-        ws.row_dimensions[r].height = 25
-
-    if foto_mapa:
+def crear_excel_con_plantilla_oficial(puntos, foto_mapa=None, plantilla_path="plantilla.xlsx"):
+    # USA TU PLANTILLA TAL CUAL - conserva logo, merges y hoja Cambios
+    if os.path.exists(plantilla_path):
+        wb = load_workbook(plantilla_path)
+        ws = wb["Datos de Campo Emision"] if "Datos de Campo Emision" in wb.sheetnames else wb.active
+        p0 = puntos[0] if puntos else {}
         try:
-            pil_img = PILImage.open(foto_mapa)
-            pil_img.thumbnail((800, 400))
-            tmp = "/tmp/mapa.png"
-            pil_img.save(tmp)
-            img = ExcelImage(tmp)
-            img.anchor = f"A{fila_mapa+1}"
-            img.width = 700; img.height = 150
-            ws.add_image(img)
-        except: pass
+            ws['E8'] = p0.get("CLIENTE","")
+            ws['E9'] = p0.get("PROYECTO","")
+            ws['E10'] = p0.get("DEPTO","")
+            ws['E11'] = p0.get("MUNICIPIO","")
+            ws['E12'] = p0.get("FUENTE","")
+            ws['D15'] = p0.get("PUNTO","")
+            ws['Q15'] = p0.get("COORD_N","")
+            ws['B16'] = p0.get("DESC","")
+            ws['B25'] = p0.get("ESQUEMA","")
+        except:
+            pass
+        fila_inicio = 19
+        for idx, pt in enumerate(puntos):
+            fila = fila_inicio + idx
+            if fila > 32: break
+            ws.cell(row=fila, column=2, value=pt.get("FECHA",""))
+            ws.cell(row=fila, column=3, value=pt.get("HORA",""))
+            ws.cell(row=fila, column=4, value=f"Ini {pt.get('CALIB','114')} Fin {pt.get('CALIB','114')}")
+            ws.cell(row=fila, column=5, value=pt.get("MEMORIA",""))
+            ws.cell(row=fila, column=6, value=pt.get("LAEQ",""))
+            ws.cell(row=fila, column=7, value=pt.get("VEL",""))
+            ws.cell(row=fila, column=8, value=pt.get("DIR",""))
+            ws.cell(row=fila, column=9, value=pt.get("TEMP",""))
+            ws.cell(row=fila, column=10, value=pt.get("HUM",""))
+            ws.cell(row=fila, column=12, value=pt.get("FUENTE",""))
+            ws.cell(row=fila, column=13, value=pt.get("TIPO_RUIDO","Continuo"))
+        if foto_mapa:
+            try:
+                pil_img = PILImage.open(foto_mapa)
+                pil_img.thumbnail((900, 500))
+                tmp = "/tmp/mapa_esquema.png"
+                pil_img.save(tmp)
+                img = ExcelImage(tmp)
+                img.anchor = "B26"
+                img.width = 800
+                img.height = 300
+                ws.add_image(img)
+            except Exception as e:
+                print(e)
+        out = io.BytesIO()
+        wb.save(out)
+        out.seek(0)
+        return out
+    else:
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "DATOS DE CAMPO"
+        ws["A1"] = "SUBE plantilla.xlsx al repo para formato tal cual"
+        out = io.BytesIO()
+        wb.save(out)
+        out.seek(0)
+        return out
 
-    for i in range(1,10):
-        ws.column_dimensions[get_column_letter(i)].width = 14
-
-    out = io.BytesIO()
-    wb.save(out)
-    out.seek(0)
-    return out
-
-tab1, tab2, tab3 = st.tabs(["📋 1. FORMATO ORIGINAL", "📸 2. FOTOS", "📊 3. SONOMETRO PDF"])
+tab1, tab2, tab3 = st.tabs(["📋 1. FORMATO ORIGINAL TAL CUAL", "📸 2. FOTOS", "📊 3. SONOMETRO PDF"])
 
 with tab1:
-    st.subheader("Pestaña 1 - Formato original")
+    st.subheader("Pestaña 1 - Formato oficial R2-POE37-EP V04 - TAL CUAL TU PLANTILLA")
+    if not os.path.exists("plantilla.xlsx"):
+        st.warning("⚠️ No encontré plantilla.xlsx. Súbela al repo para que salga TAL CUAL con logo y hoja Cambios.")
+    else:
+        st.success("✅ plantilla.xlsx encontrada - Excel TAL CUAL + hoja Cambios intacta")
+
     c1,c2 = st.columns(2)
     with c1:
         cliente = st.text_input("CLIENTE", "Rueda Inversiones S A S")
@@ -200,29 +173,33 @@ with tab1:
         laeq = st.number_input("LAeq,T", 0.0, 140.0, 65.0)
         vel = st.number_input("Vel Viento", 0.0, 20.0, 0.3)
         fuente = st.text_input("Fuente", "mineria")
+        tipo_ruido = st.selectbox("Tipo de Ruido (Plantilla)", ["Continuo", "Intermitente"], 0)
         sector = st.selectbox("SECTOR RES 627", list(NORMA.keys()), 2)
         periodo = st.selectbox("PERIODO", ["Diurno","Nocturno"], 1)
-        mapa = st.file_uploader("MAPA SATELITAL", type=["jpg","png","jpeg"])
+        mapa = st.file_uploader("MAPA SATELITAL / ESQUEMA", type=["jpg","png","jpeg"])
+        esquema_txt = st.text_area("Texto para recuadro ESQUEMA DEL PUNTO", "Norte: vía, Sur: casas a 15m, Obstáculos: ninguno")
 
     limite = NORMA[sector][periodo]
     cumple = "CUMPLE" if laeq <= limite else "NO CUMPLE"
     st.info(f"Límite {limite} dB - {cumple}")
 
-    if st.button("📍 AGREGAR PUNTO", type="primary", use_container_width=True):
+    if st.button("📍 AGREGAR PUNTO A TABLA", type="primary", use_container_width=True):
         st.session_state.puntos.append({
             "CLIENTE": cliente, "PROYECTO": proyecto, "MUNICIPIO": municipio, "DEPTO": depto,
             "PUNTO": punto, "COORD_N": coord_n, "COORD_C12": coord_c12, "DESC": desc,
             "FECHA": str(fecha), "HORA": f"{hora}-{hora_fin}", "CALIB": calib, "MEMORIA": memoria,
-            "LAEQ": laeq, "VEL": vel, "FUENTE": fuente, "SECTOR": sector, "PERIODO": periodo,
-            "LIMITE": limite, "CUMPLE": cumple, "DIR": "N", "TEMP": 29, "HUM": 45
+            "LAEQ": laeq, "VEL": vel, "FUENTE": fuente, "TIPO_RUIDO": tipo_ruido,
+            "SECTOR": sector, "PERIODO": periodo,
+            "LIMITE": limite, "CUMPLE": cumple, "DIR": "N", "TEMP": 29, "HUM": 45,
+            "ESQUEMA": esquema_txt
         })
-        st.success("Punto agregado")
+        st.success(f"Punto {punto} agregado - Total: {len(st.session_state.puntos)}")
 
     if st.session_state.puntos:
         st.dataframe(pd.DataFrame(st.session_state.puntos), use_container_width=True)
-        if st.button("📥 GENERAR EXCEL ORIGINAL", type="primary", use_container_width=True):
-            excel_file = crear_excel_original(st.session_state.puntos, mapa)
-            st.download_button("📥 DESCARGAR EXCEL", excel_file.getvalue(), f"R2-POE37-EP_V04_{municipio}_{punto}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, type="primary")
+        if st.button("📥 GENERAR EXCEL TAL CUAL PLANTILLA OFICIAL", type="primary", use_container_width=True):
+            excel_file = crear_excel_con_plantilla_oficial(st.session_state.puntos, mapa, "plantilla.xlsx")
+            st.download_button("📥 DESCARGAR EXCEL R2-POE37-EP V04 (TAL CUAL)", excel_file.getvalue(), f"R2-POE37-EP_V04_{municipio}_{punto}_TAL_CUAL.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, type="primary")
 
 with tab2:
     st.subheader("Pestaña 2 - Fotos")
@@ -269,7 +246,6 @@ with tab3:
         if serie_total is not None:
             leq_total = calcular_leq(serie_total)
             st.success(f"TOTAL {hoja} - {len(serie_total)} datos - {leq_total:.1f} dB")
-            # FIX ERROR DE TU CAPTURA - AHORA USA DATAFRAME LIMPIO
             chart_df = pd.DataFrame({"TOTAL dB": serie_total.values})
             st.line_chart(chart_df)
 
@@ -330,7 +306,6 @@ Fecha: {datetime.now()}
                     pdf.savefig(fig2); plt.close(fig2)
                 pdf_buffer.seek(0)
                 st.download_button("📥 DESCARGAR PDF FINAL", pdf_buffer.getvalue(), f"INFORME_RES627_{cumple3}.pdf", mime="application/pdf", use_container_width=True, type="primary")
-                st.success("PDF listo - dale clic arriba en DESCARGAR PDF FINAL")
         else:
             st.error(f"No encontré dB en {hoja}")
             if df_raw is not None:
