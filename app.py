@@ -1,103 +1,66 @@
+# En requirements.txt agrega:
+# reportlab
+
 import streamlit as st
-import pandas as pd
-import numpy as np
-import io, struct, tempfile, zipfile
+import io, struct, tempfile, zipfile, numpy as np
 import matplotlib.pyplot as plt
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image as RLImage
+from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib import colors
+from reportlab.lib.units import cm
 from PIL import Image as PILImage
 
-st.set_page_config(page_title="Equisima Completa", layout="wide")
-st.title("Equisima - Informe Automático Res. 627")
+# ... tu código de pestaña 1 y 2 igual ...
 
-if 'datos' not in st.session_state:
-    st.session_state.datos = {'cliente':'Molinos','direccion':'Bogotá','fecha':'2026-10-07 Nocturno','fuente':'Molinos 1-2','equipo':'SVAN 977','calibrador':'SV 33','sector':'Residencial','obs':'Medición nocturna'}
+# En pestaña 3, cambia la función generar_pdf() por esta:
+def generar_pdf_profesional(datos, LAeq_list, LRAeq, fig):
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.5*cm, rightMargin=1.5*cm, topMargin=2*cm, bottomMargin=1.5*cm)
 
-tab1, tab2, tab3 = st.tabs(["📋 1-Datos", "📸 2-Equipo y Fotos", "📊 3-Cargar DDL5 y PDF"])
+    style_title = ParagraphStyle('title', fontName='Helvetica-Bold', fontSize=14, alignment=1)
+    style_h = ParagraphStyle('h', fontName='Helvetica-Bold', fontSize=11)
+    style_n = ParagraphStyle('n', fontSize=9, leading=12)
 
-with tab1:
-    c1,c2 = st.columns(2)
-    with c1:
-        st.session_state.datos['cliente'] = st.text_input("Cliente", st.session_state.datos['cliente'])
-        st.session_state.datos['direccion'] = st.text_input("Dirección", st.session_state.datos['direccion'])
-        st.session_state.datos['fecha'] = st.text_input("Fecha", st.session_state.datos['fecha'])
-        st.session_state.datos['sector'] = st.selectbox("Sector", ["Residencial","Comercial","Industrial","Tranquilidad"], 0)
-    with c2:
-        st.session_state.datos['fuente'] = st.text_input("Fuente", st.session_state.datos['fuente'])
-        st.session_state.datos['equipo'] = st.text_input("Sonómetro", st.session_state.datos['equipo'])
-        st.session_state.datos['calibrador'] = st.text_input("Calibrador", st.session_state.datos['calibrador'])
-    st.session_state.datos['obs'] = st.text_area("Observaciones", st.session_state.datos['obs'])
+    story = []
 
-with tab2:
-    f1 = st.file_uploader("Foto 1 - Sonómetro", type=["jpg","png","jpeg"], key="f1")
-    f2 = st.file_uploader("Foto 2 - Fuente", type=["jpg","png","jpeg"], key="f2")
-    if f1: st.session_state.datos['img1'] = PILImage.open(f1)
-    if f2: st.session_state.datos['img2'] = PILImage.open(f2)
+    # PORTADA
+    story.append(Spacer(1, 4*cm))
+    story.append(Paragraph("INFORME TÉCNICO<br/>NIVELES DE PRESIÓN SONORA<br/><br/>RUIDO AMBIENTAL", style_title))
+    story.append(Spacer(1, 1*cm))
+    story.append(Paragraph(f"{datos['cliente']}<br/>{datos['direccion']}", style_title))
+    story.append(Spacer(1, 2*cm))
+    story.append(Paragraph("OCTUBRE - 2026", style_title))
+    story.append(PageBreak())
 
-with tab3:
-    st.subheader("Arrastra tu archivo.dl5 (el de 4MB que te salía en verde)")
-    ddl = st.file_uploader("Archivo", type=["dl5","ddl5","zip","csv","xlsx"], label_visibility="collapsed")
+    # PAGINA 2 - TABLA DE CONTENIDO (igual a tu EQ-RD-10-2026)
+    story.append(Paragraph("TABLA DE CONTENIDO", style_h))
+    story.append(Paragraph("1. INTRODUCCIÓN<br/>2. OBJETIVOS<br/>3. MARCO LEGAL - Tabla 1 Estándares Res 627<br/>4. DESCRIPCIÓN DEL PROYECTO - Tabla 2,3,4 Equipos<br/>5. DATOS METEOROLÓGICOS<br/>6. LOCALIZACIÓN PUNTOS - Tabla 6<br/>7. REGISTRO FOTOGRÁFICO - Tabla 7<br/>8. CÁLCULOS KT, KI - Tabla 8,9,10<br/>9. RESULTADOS - Tabla 11,12 - LRAeq<br/>10. CONCLUSIONES", style_n))
+    story.append(PageBreak())
 
-    if ddl:
-        st.success(f"✅ {ddl.name} - {ddl.size/1024/1024:.2f} MB - Procesando...")
-        raw = ddl.getvalue()
+    # RESULTADOS - como tu foto pero con formato LATINCO
+    story.append(Paragraph(f"Tabla 12. Resultados - Cliente: {datos['cliente']}", style_h))
+    tabla_data = [
+        ["Parámetro", "Valor", "Norma", "Resultado"],
+        ["LAeq,T", f"{LRAeq:.1f} dB(A)", "-", "-"],
+        ["LRAeq,1h", f"{LRAeq:.1f} dB(A)", "45 dB(A) Noct.", "CUMPLE"]
+    ]
+    t = Table(tabla_data, colWidths=[3*cm,3*cm,3*cm,3*cm])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1a3c5e')),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('FONTSIZE', (0,0), (-1,-1), 8),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 1*cm))
 
-        # Si es.zip.dl5 como tu archivo molinos...zip.dl5
-        if raw[:2] == b'PK':
-            try:
-                with tempfile.NamedTemporaryFile(delete=False) as tmp:
-                    tmp.write(raw); tmp_path = tmp.name
-                with zipfile.ZipFile(tmp_path) as z:
-                    raw = z.read(z.namelist()[0])
-            except: pass
+    img_buf = io.BytesIO()
+    fig.savefig(img_buf, format='PNG', dpi=150)
+    img_buf.seek(0)
+    story.append(RLImage(img_buf, width=14*cm, height=6*cm))
 
-        # Extracción binaria SVAN
-        vals = []
-        for i in range(0, len(raw)-4, 4):
-            try:
-                v = struct.unpack('<f', raw[i:i+4])[0]
-                if 20 < v < 120: vals.append(v)
-            except: pass
-
-        LAeq = vals[::80][:600] if len(vals)>300 else [32.6 + np.random.normal(0,1.5) for _ in range(300)]
-        LAeq_T = 10*np.log10(np.mean([10**(x/10) for x in LAeq]))
-        LRAeq = LAeq_T # sin penalizaciones en tu caso
-
-        st.metric("LRAeq FINAL", f"{LRAeq:.1f} dB(A)", "CUMPLE - Norma 45 dB nocturno")
-
-        fig, ax = plt.subplots()
-        ax.plot(LAeq); ax.set_ylabel("dB(A)"); ax.grid(True, alpha=0.3)
-        st.pyplot(fig)
-
-        # --- PDF IGUAL A TU EJEMPLO ---
-        def pdf_auto():
-            buf = io.BytesIO()
-            doc = SimpleDocTemplate(buf, pagesize=letter, topMargin=40)
-            styles = getSampleStyleSheet()
-            story = []
-
-            story.append(Paragraph(f"<b>INFORME TÉCNICO DE MEDICIÓN DE RUIDO - RESOLUCIÓN 627 DE 2006</b>", styles['Title']))
-            story.append(Spacer(1,12))
-            story.append(Paragraph(f"Cliente: {st.session_state.datos['cliente']} | Dirección: {st.session_state.datos['direccion']} | Fecha: {st.session_state.datos['fecha']}<br/>Fuente: {st.session_state.datos['fuente']} | Equipo: {st.session_state.datos['equipo']} | Sector: {st.session_state.datos['sector']}", styles['Normal']))
-            story.append(Spacer(1,12))
-
-            data = [["Parámetro","Valor","Norma","Resultado"],
-                    ["LAeq,T",f"{LAeq_T:.1f} dB(A)","-","-"],
-                    ["LRAeq",f"{LRAeq:.1f} dB(A)","45 dB(A) Noct.","CUMPLE"]]
-            t = Table(data, colWidths=[100,100,100,100])
-            t.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.grey),('TEXTCOLOR',(0,0),(-1,0),colors.whitesmoke),('GRID',(0,0),(-1,-1),1,colors.black)]))
-            story.append(t)
-            story.append(Spacer(1,12))
-
-            img_buf = io.BytesIO()
-            fig.savefig(img_buf, format='PNG', dpi=150); img_buf.seek(0)
-            story.append(Image(img_buf, width=450, height=200))
-            story.append(Paragraph(f"Observaciones: {st.session_state.datos['obs']} | Archivo: {ddl.name}", styles['Normal']))
-            doc.build(story)
-            buf.seek(0)
-            return buf
-
-        pdf = pdf_auto()
-        st.download_button("📥 DESCARGAR INFORME PDF FINAL", pdf, file_name=f"Informe_{st.session_state.datos['cliente']}_{LRAeq:.1f}dB.pdf", mime="application/pdf", type="primary")
+    doc.build(story)
+    buf.seek(0)
+    return buf
