@@ -1,190 +1,195 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import io
-import zipfile
-from datetime import datetime
-from openpyxl import load_workbook
-from openpyxl.drawing.image import Image as ExcelImage
-from PIL import Image as PILImage
+import io, math, os
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
-import os
+from PIL import Image
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image as RLImage
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib import colors
+from reportlab.lib.units import cm
+from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
 
-st.set_page_config(page_title="EQUISIMA V13.7 NO BORRA TITULO", layout="wide")
-st.title("EQUISIMA - V13.7 FIX TITULO GRIS")
+st.set_page_config(page_title="EQUISAM V14 MAPA + FOTOS", layout="wide")
+st.title("EQUISAM V14 - RES 627 con Mapa + Registro Fotográfico")
 
-if "puntos" not in st.session_state:
-    st.session_state.puntos = []
-if "fotos_puntos" not in st.session_state:
-    st.session_state.fotos_puntos = {}
+# === SIDEBAR ===
+st.sidebar.header("Tipo Res 627")
+tipo = st.sidebar.selectbox("Tipo", ["RUIDO AMBIENTAL - Cap II", "EMISIÓN DE RUIDO - Cap I"])
+es_emision = "EMISIÓN" in tipo
+sector_sel = st.sidebar.selectbox("Sector", ["D. Zona Suburbana o Rural (55/45) - LATINCO","A. Tranquilidad (55/45)","B. Tranquilidad Moderado (65/50)","C. Intermedio (75/70)","C. Industrial (75/75)"])
+diurno, nocturno = (55,45) if "55" in sector_sel else (75,75)
+cliente = st.sidebar.text_input("Cliente", "LATINCO S.A.")
+codigo = st.sidebar.text_input("Código", "EQ-CA-10-2026")
+municipio = st.sidebar.text_input("Municipio", "Puerto Boyacá")
+vereda = st.sidebar.text_input("Vereda", "La Pizarra Balastrera")
 
-NORMA = {
-    "A. Tranquilidad y Silencio": {"Diurno": 55, "Nocturno": 45},
-    "B. Tranquilidad y Ruido Moderado": {"Diurno": 65, "Nocturno": 50},
-    "C. Ruido Intermedio Restringido": {"Diurno": 75, "Nocturno": 70},
-    "C. Industrial": {"Diurno": 75, "Nocturno": 75},
-    "C. Centro Ciudad": {"Diurno": 70, "Nocturno": 55},
-}
+tab1, tab2, tab3 = st.tabs(["📍 Puntos + Coordenadas", "📸 Fotos RA1-RA4", "📄 Generar PDF"])
 
-def calcular_leq(vals):
-    vals = np.array(vals)
-    vals = vals[vals > 0]
-    return 10*np.log10(np.mean(10**(vals/10)))
-
-def crear_excel_con_plantilla_oficial(puntos, foto_mapa=None, plantilla_path="plantilla.xlsx", escenario=None):
-    from openpyxl.cell.cell import MergedCell
-    from openpyxl.utils import get_column_letter
-    def safe_set(ws, r, c, val):
-        try:
-            cell = ws.cell(row=r, column=c)
-            if isinstance(cell, MergedCell):
-                for mr in ws.merged_cells.ranges:
-                    if mr.min_row <= r <= mr.max_row and mr.min_col <= c <= mr.max_col:
-                        ws.cell(row=mr.min_row, column=mr.min_col).value = val
-                        return
-            else:
-                cell.value = val
-        except:
-            pass
-
-    if os.path.exists(plantilla_path):
-        wb = load_workbook(plantilla_path)
-        ws = wb["Datos de Campo Emision"] if "Datos de Campo Emision" in wb.sheetnames else wb.active
-        p0 = puntos[0] if puntos else {}
-
-        # Encabezado
-        safe_set(ws, 8, 5, p0.get("CLIENTE",""))
-        safe_set(ws, 9, 5, p0.get("PROYECTO",""))
-        safe_set(ws, 10, 5, p0.get("DEPTO",""))
-        safe_set(ws, 11, 5, p0.get("MUNICIPIO",""))
-        safe_set(ws, 12, 5, p0.get("FUENTE",""))
-
-        # --- FIX DEFINITIVO NO TOCA TITULO GRIS B-E ---
-        if len(puntos) >= 1:
-            pt1 = puntos[0]
-            safe_set(ws, 15, 4, pt1.get("PUNTO","")) # D15
-            safe_set(ws, 15, 9, pt1.get("COORD_N","")) # I15
-            safe_set(ws, 16, 6, pt1.get("DESC","")) # F16 - DESPUES del merge B16:E16
-            safe_set(ws, 17, 6, pt1.get("BARRIDO_DB","")) # F17 - DESPUES del merge B17:E17
-            safe_set(ws, 19, 2, str(pt1.get("FECHA","")))
-            safe_set(ws, 19, 3, str(pt1.get("HORA","")))
-            safe_set(ws, 19, 4, f"Ini {pt1.get('CALIB','114')}")
-            safe_set(ws, 20, 4, f"Fin {pt1.get('CALIB','114')}")
-            safe_set(ws, 19, 5, str(pt1.get("MEMORIA","")))
-            safe_set(ws, 19, 6, pt1.get("LAEQ",""))
-            safe_set(ws, 19, 7, pt1.get("VEL",""))
-            safe_set(ws, 19, 8, pt1.get("DIR",""))
-            safe_set(ws, 19, 9, pt1.get("TEMP",""))
-            safe_set(ws, 19, 10, pt1.get("HUM",""))
-            safe_set(ws, 19, 11, pt1.get("PRECIP",""))
-            safe_set(ws, 19, 12, pt1.get("FUENTE",""))
-            safe_set(ws, 19, 13, pt1.get("TIPO_RUIDO",""))
-            safe_set(ws, 19, 14, pt1.get("TIEMPO_OP",""))
-            safe_set(ws, 24, 2, pt1.get("ESQUEMA",""))
-
-        if len(puntos) >= 2:
-            pt2 = puntos[1]
-            safe_set(ws, 27, 4, pt2.get("PUNTO","")) # D27
-            safe_set(ws, 27, 9, pt2.get("COORD_N","")) # I27
-            safe_set(ws, 28, 6, pt2.get("DESC","")) # F28
-            safe_set(ws, 29, 6, pt2.get("BARRIDO_DB","")) # F29
-            safe_set(ws, 31, 2, str(pt2.get("FECHA","")))
-            safe_set(ws, 31, 3, str(pt2.get("HORA","")))
-            safe_set(ws, 31, 4, f"Ini {pt2.get('CALIB','114')}")
-            safe_set(ws, 32, 4, f"Fin {pt2.get('CALIB','114')}")
-            safe_set(ws, 31, 5, str(pt2.get("MEMORIA","")))
-            safe_set(ws, 31, 6, pt2.get("LAEQ",""))
-            safe_set(ws, 31, 7, pt2.get("VEL",""))
-            safe_set(ws, 31, 8, pt2.get("DIR",""))
-            safe_set(ws, 31, 9, pt2.get("TEMP",""))
-            safe_set(ws, 31, 10, pt2.get("HUM",""))
-            safe_set(ws, 31, 11, pt2.get("PRECIP",""))
-            safe_set(ws, 31, 12, pt2.get("FUENTE",""))
-            safe_set(ws, 31, 13, pt2.get("TIPO_RUIDO",""))
-            safe_set(ws, 31, 14, pt2.get("TIEMPO_OP",""))
-            safe_set(ws, 36, 2, pt2.get("ESQUEMA",""))
-
-        if escenario:
-            q1 = f"Diurno: {'X' if escenario['diurno'] else ' '} Nocturno: {'X' if escenario['nocturno'] else ' '} Fuente Encendida: {'X' if escenario['encendida'] else ' '} Apagada: {'X' if escenario['apagada'] else ' '} "
-            q2 = f"Sí: {'X' if escenario['residual']=='Sí' else ' '} No: {'X' if escenario['residual']=='No' else ' '} Just: {escenario['justificacion']}"
-            q3 = f"Sí: {'X' if escenario['barrido']=='Sí' else ' '} No: {'X' if escenario['barrido']=='No' else ' '} "
-            safe_set(ws, 15, 17, q1); safe_set(ws, 16, 17, q2); safe_set(ws, 17, 17, q3)
-            safe_set(ws, 27, 17, q1); safe_set(ws, 28, 17, q2); safe_set(ws, 29, 17, q3)
-
-        out = io.BytesIO()
-        wb.save(out)
-        out.seek(0)
-        return out
-    else:
-        from openpyxl import Workbook
-        wb = Workbook(); ws = wb.active; ws["A1"]="Sube plantilla.xlsx"
-        out = io.BytesIO(); wb.save(out); out.seek(0); return out
-
-tab1, tab2 = st.tabs(["📋 FORMATO", "📸 FOTOS"])
+if "fotos" not in st.session_state:
+    st.session_state.fotos = {}
 
 with tab1:
-    if not os.path.exists("plantilla.xlsx"):
-        st.warning("Sube plantilla.xlsx")
-    else:
-        st.success("✅ plantilla.xlsx OK - FIX TITULO GRIS")
+    st.subheader("Tabla 6 - Ubicación puntos + Tabla 5 Meteo - Para Ilustración 1 Mapa")
+    st.info("Pon LAT y LON reales. La app te genera el mapa automáticamente para el PDF")
 
-    if st.button("🗑️ LIMPIAR TODO", use_container_width=True):
-        st.session_state.puntos = []
-        st.session_state.fotos_puntos = {}
-        st.rerun()
+    df_init = pd.DataFrame([
+        ["RA1", 6.4321, -74.4321, "14/07/2026 10:00", "14/07/2026 11:00", 0.5, "N", 32, 68, "No", 61.3, 60.8, 55.0],
+        ["RA2", 6.4330, -74.4310, "14/07/2026 11:15", "14/07/2026 12:15", 0.3, "NE", 33, 70, "No", 63.6, 63.1, 57.0],
+        ["RA3", 6.4340, -74.4300, "14/07/2026 12:50", "14/07/2026 13:50", 0.4, "E", 32, 69, "No", 60.8, 62.6, 56.2],
+        ["RA4", 6.4350, -74.4290, "14/07/2026 14:02", "14/07/2026 15:02", 0.2, "S", 31, 70, "No", 67.1, 64.7, 58.1],
+    ], columns=["Punto","LAT","LON","Inicio","Fin","Vviento","Dir","Temp","Hum","Precip","LN","LRAeq","Lres"])
 
-    c1,c2 = st.columns(2)
-    with c1:
-        cliente = st.text_input("CLIENTE", "Molinos el yopal")
-        municipio = st.text_input("MUNICIPIO", "YOPAL")
-        depto = st.text_input("DEPARTAMENTO", "Casanare")
-        punto = st.text_input("PUNTO No", "Punto 1")
-        coord_n = st.text_input("COORD", "5°21'N 72°23'W")
-        desc = st.text_area("DESCRIPCIÓN DEL PUNTO (va en F16, no borra titulo)", "ubicado al costado norte de la planta en porteria principal se evidencia alto flujo entrada y salida de vehiculos de carga", height=90)
-        barrido_db = st.text_input("BARRIDO PERIMETRAL dB (va en F17)", "68.5 / 70.2 / 69.1")
-        fuente = st.text_input("Fuente", "MOLIENDA")
-    with c2:
-        proyecto = st.text_input("PROYECTO", "Molinos el yopal")
-        fecha = st.date_input("FECHA", datetime.now())
-        hora = st.text_input("HORA INICIO", "17:00")
-        hora_fin = st.text_input("HORA FIN", "17:15")
-        calib = st.text_input("Calib", "114.0")
-        memoria = st.text_input("Memoria", "1")
-        laeq = st.number_input("LAeq", 0.0, 140.0, 73.0)
-        vel = st.number_input("Viento", 0.0, 20.0, 0.3)
-        dir_v = st.text_input("Dir", "N")
-        temp = st.number_input("Temp", -10.0, 60.0, 32.0)
-        hum = st.number_input("Hum", 0.0, 100.0, 68.0)
-        precip = st.selectbox("Precip?", ["No","Sí"],0)
-        tipo = st.selectbox("Tipo", ["Continuo","Intermitente"],0)
-        sector = st.selectbox("SECTOR", list(NORMA.keys()),2)
-        periodo = st.selectbox("PERIODO", ["Diurno","Nocturno"],0)
-        esquema_txt = st.text_area("ESQUEMA", "Norte: vía")
+    df_puntos = st.data_editor(df_init, num_rows="dynamic", use_container_width=True, key="puntos")
 
-    if st.button("📍 AGREGAR PUNTO", type="primary", use_container_width=True):
-        st.session_state.puntos.append({
-            "CLIENTE": cliente, "PROYECTO": proyecto, "MUNICIPIO": municipio, "DEPTO": depto,
-            "PUNTO": punto, "COORD_N": coord_n, "DESC": desc, "BARRIDO_DB": barrido_db,
-            "FECHA": str(fecha), "HORA": f"{hora}-{hora_fin}", "CALIB": calib, "MEMORIA": memoria,
-            "LAEQ": laeq, "VEL": vel, "DIR": dir_v, "TEMP": temp, "HUM": hum, "PRECIP": precip,
-            "FUENTE": fuente, "TIPO_RUIDO": tipo, "TIEMPO_OP": "60 min", "ESQUEMA": esquema_txt
-        })
-        st.success(f"Agregado {punto}")
-
-    if st.session_state.puntos:
-        df = pd.DataFrame(st.session_state.puntos)
-        st.dataframe(df[["PUNTO","DESC","BARRIDO_DB","LAEQ"]], use_container_width=True)
-        if st.button("📥 GENERAR EXCEL", type="primary", use_container_width=True):
-            escenario_data = {"diurno": periodo=="Diurno", "nocturno": periodo=="Nocturno", "encendida": True, "apagada": False, "residual": "Sí", "justificacion": "", "barrido": "Sí"}
-            excel_file = crear_excel_con_plantilla_oficial(st.session_state.puntos, None, "plantilla.xlsx", escenario_data)
-            st.download_button("📥 DESCARGAR", excel_file.getvalue(), f"R2_FIX_TITULO_{municipio}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, type="primary")
+    # PREVIEW MAPA
+    if not df_puntos.empty:
+        fig, ax = plt.subplots(figsize=(5,4))
+        ax.scatter(df_puntos["LON"], df_puntos["LAT"], c='red', s=100, edgecolors='black', zorder=5)
+        for _, r in df_puntos.iterrows():
+            ax.text(r["LON"], r["LAT"]+0.0001, r["Punto"], fontsize=9, fontweight='bold')
+        ax.set_xlabel("Longitud")
+        ax.set_ylabel("Latitud")
+        ax.set_title(f"Ilustración 1 - Ubicación puntos {municipio}")
+        ax.grid(True, alpha=0.3)
+        st.pyplot(fig)
+        st.session_state.mapa_fig = fig
 
 with tab2:
-    st.write("Fotos por punto")
-    if st.session_state.puntos:
-        sel = st.selectbox("Punto", [p["PUNTO"] for p in st.session_state.puntos])
-        fotos = st.file_uploader("Fotos", type=["jpg","png","jpeg"], accept_multiple_files=True, key=sel)
-        if fotos:
-            st.session_state.fotos_puntos[sel] = fotos
-            st.success(f"{len(fotos)} fotos")
+    st.subheader("Tabla 7 - Registro Fotográfico - Se pegan automático en PDF")
+    if df_puntos.empty:
+        st.warning("Primero agrega puntos en Pestaña 1")
+    else:
+        sel_punto = st.selectbox("Selecciona Punto para subir fotos", df_puntos["Punto"].tolist())
+        files = st.file_uploader(f"Fotos para {sel_punto} (puedes subir 2: diurna y nocturna)", type=["jpg","png","jpeg"], accept_multiple_files=True, key=f"foto_{sel_punto}")
+        if files:
+            st.session_state.fotos[sel_punto] = files
+            cols = st.columns(len(files))
+            for i, f in enumerate(files):
+                cols[i].image(f, caption=f"{sel_punto} - {f.name}", width=200)
+
+        if st.session_state.fotos:
+            st.success(f"Fotos cargadas: {list(st.session_state.fotos.keys())}")
+
+with tab3:
+    def generar_pdf_v14():
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.5*cm, rightMargin=1.5*cm, topMargin=2*cm, bottomMargin=1.5*cm)
+        s_title = ParagraphStyle('title', fontSize=13, alignment=TA_CENTER, fontName='Helvetica-Bold')
+        s_h1 = ParagraphStyle('h1', fontSize=11, fontName='Helvetica-Bold', textColor=colors.HexColor('#0a2a5e'), spaceBefore=12, spaceAfter=6)
+        s_n = ParagraphStyle('n', fontSize=9, leading=12, alignment=TA_JUSTIFY, fontName='Helvetica')
+        s_small = ParagraphStyle('small', fontSize=7, fontName='Helvetica')
+
+        def header(canvas, docu):
+            canvas.saveState()
+            canvas.setFont('Helvetica-Bold', 7)
+            canvas.rect(1.5*cm, 26*cm, 18*cm, 1.2*cm, stroke=1, fill=0)
+            canvas.drawString(2*cm, 26.6*cm, f"INFORME {tipo} - {cliente}")
+            canvas.drawString(2*cm, 26.2*cm, f"Código: {codigo} R6-POE1-I V04 Pág: {docu.page}")
+            canvas.restoreState()
+
+        story = []
+        # PORTADA
+        story.append(Spacer(1,3*cm))
+        story.append(Paragraph(f"INFORME TÉCNICO<br/>NIVELES DE PRESIÓN SONORA<br/><br/>{tipo}<br/><br/>{cliente}<br/>MUNICIPIO {municipio}<br/>Código: {codigo}", s_title))
+        story.append(PageBreak())
+
+        # TABLA 6 UBICACIÓN
+        story.append(Paragraph("Tabla 6. Ubicación de los puntos de monitoreo", s_h1))
+        rows6 = [["Punto","LAT","LON","Dirección"]] + [[r["Punto"], str(r["LAT"]), str(r["LON"]), vereda] for _, r in df_puntos.iterrows()]
+        t6 = Table(rows6, colWidths=[2*cm,3*cm,3*cm,8*cm])
+        t6.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#0a2a5e')),('TEXTCOLOR',(0,0),(-1,0),colors.white),('GRID',(0,0),(-1,-1),0.5,colors.black),('FONTSIZE',(0,0),(-1,-1),8)]))
+        story.append(t6)
+        story.append(Spacer(1,0.5*cm))
+
+        # ILUSTRACIÓN 1 MAPA
+        story.append(Paragraph("Ilustración 1 Ubicación de los puntos de monitoreo de ruido ambiental", s_h1))
+        if "mapa_fig" in st.session_state:
+            img_buf = io.BytesIO()
+            st.session_state.mapa_fig.savefig(img_buf, format='PNG', dpi=150, bbox_inches='tight')
+            img_buf.seek(0)
+            story.append(RLImage(img_buf, width=14*cm, height=9*cm))
+            story.append(Paragraph(f"Fuente: Equisam SAS - Coordenadas {municipio} {vereda}", s_small))
+        story.append(PageBreak())
+
+        # TABLA 7 FOTOS
+        story.append(Paragraph("Tabla 7. Registro Fotográfico de Ruido Ambiental", s_h1))
+        if st.session_state.fotos:
+            for punto, fotos_list in st.session_state.fotos.items():
+                story.append(Paragraph(f"{punto} - {vereda}", s_h1))
+                img_row = []
+                for f in fotos_list[:2]: # 2 por fila
+                    try:
+                        pil = Image.open(f)
+                        # Redimensionar para PDF
+                        pil.thumbnail((800,600))
+                        buf_img = io.BytesIO()
+                        pil.save(buf_img, format='PNG')
+                        buf_img.seek(0)
+                        img_row.append(RLImage(buf_img, width=7*cm, height=5*cm))
+                    except:
+                        pass
+                if img_row:
+                    # Tabla de 2 fotos
+                    if len(img_row) == 1:
+                        story.append(img_row[0])
+                    else:
+                        t_foto = Table([[img_row[0], img_row[1]]], colWidths=[8*cm,8*cm])
+                        story.append(t_foto)
+                story.append(Spacer(1,0.3*cm))
+        else:
+            story.append(Paragraph("Sin fotos cargadas - Suba fotos en Pestaña 2", s_n))
+
+        story.append(PageBreak())
+
+        # RESULTADOS
+        story.append(Paragraph(f"Tabla 11. Resultados {tipo} - Diurno y Nocturno", s_h1))
+        header_r = ["Punto","Inicio","Fin","LRAeq","Norma","Cumple?"]
+        if es_emision: header_r.append("L Emisión")
+        rows = [header_r]
+        for _, r in df_puntos.iterrows():
+            lra = float(r["LRAeq"])
+            es_noct = "00:" in str(r["Inicio"]) or "21:" in str(r["Inicio"]) or "22:" in str(r["Inicio"]) or "23:" in str(r["Inicio"])
+            norma_comp = nocturno if es_noct else diurno
+            cumple = "CUMPLE" if lra <= norma_comp else "NO CUMPLE"
+            row = [r["Punto"], str(r["Inicio"]), str(r["Fin"]), f"{lra} dB", f"{norma_comp} dB", cumple]
+            if es_emision:
+                lres = float(r["Lres"])
+                try:
+                    le = 10*math.log10(10**(lra/10)-10**(lres/10)) if lra>lres+3 else lra
+                except: le=lra
+                row.append(f"{le:.1f} dB")
+            rows.append(row)
+
+        t_r = Table(rows, colWidths=[2*cm,3*cm,3*cm,2*cm,2*cm,2*cm,2*cm][:len(header_r)])
+        t_r.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#0a2a5e')),('TEXTCOLOR',(0,0),(-1,0),colors.white),
+            ('GRID',(0,0),(-1,-1),0.5,colors.black),('FONTSIZE',(0,0),(-1,-1),7),
+            ('BACKGROUND',(0,1),(-1,-1),colors.HexColor('#e7f3ff'))
+        ]))
+        story.append(t_r)
+
+        # Gráfica comparación
+        story.append(Spacer(1,0.5*cm))
+        fig2, ax2 = plt.subplots(figsize=(6,3))
+        vals = df_puntos["LRAeq"].astype(float).tolist()
+        labs = df_puntos["Punto"].tolist()
+        ax2.bar(labs, vals, color='#1f77b4')
+        ax2.axhline(diurno, color='red', linestyle='--', label=f'Diurno {diurno} dB')
+        ax2.axhline(nocturno, color='orange', linestyle='--', label=f'Nocturno {nocturno} dB')
+        ax2.set_ylabel('dB(A)'); ax2.legend(); plt.xticks(rotation=15)
+        buf2 = io.BytesIO(); fig2.savefig(buf2, format='PNG', dpi=150); buf2.seek(0)
+        story.append(RLImage(buf2, width=14*cm, height=5*cm))
+
+        doc.build(story, onFirstPage=header, onLaterPages=header)
+        buf.seek(0)
+        return buf
+
+    if st.button("📥 GENERAR PDF V14 CON MAPA + FOTOS", type="primary", use_container_width=True):
+        if df_puntos.empty:
+            st.error("Agrega puntos primero")
+        else:
+            pdf = generar_pdf_v14()
+            st.balloons()
+            st.success("¡PDF V14 con Mapa Ilustración 1 + Tabla 7 Fotos generado!")
+            st.download_button("📥 DESCARGAR INFORME V14 - MAPA + FOTOS + RES627", pdf, f"{codigo}_V14_MAPA_FOTOS.pdf", "application/pdf", type="primary", use_container_width=True)
